@@ -51,6 +51,10 @@ const blogSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  isPatner: {
+    type: Boolean,
+    default: false
+  },
   rating: {
     type: Number,
     default: 0

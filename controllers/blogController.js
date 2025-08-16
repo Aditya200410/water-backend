@@ -30,6 +30,9 @@ const getBlogsBySection = async (req, res) => {
       case 'mostloved':
         query = { isMostLoved: true };
         break;
+         case 'patner':
+        query = { isPatner: true };
+        break;
       default:
         return res.status(400).json({ message: "Invalid section" });
     }
@@ -132,6 +135,7 @@ const createBlogWithFiles = async (req, res) => {
       isBestSeller: blogData.isBestSeller === 'true' || blogData.isBestSeller === true,
       isFeatured: blogData.isFeatured === 'true' || blogData.isFeatured === true,
       isMostLoved: blogData.isMostLoved === 'true' || blogData.isMostLoved === true,
+      isPatner: blogData.isPatner === 'true' || blogData.isPatner === true,
       codAvailable: blogData.codAvailable === 'false' ? false : true,
       stock: typeof blogData.stock !== 'undefined' ? Number(blogData.stock) : 10
     });
@@ -225,6 +229,8 @@ const updateBlogWithFiles = async (req, res) => {
       isBestSeller: blogData.isBestSeller !== undefined ? (blogData.isBestSeller === 'true' || blogData.isBestSeller === true) : existingBlog.isBestSeller,
       isFeatured: blogData.isFeatured !== undefined ? (blogData.isFeatured === 'true' || blogData.isFeatured === true) : existingBlog.isFeatured,
       isMostLoved: blogData.isMostLoved !== undefined ? (blogData.isMostLoved === 'true' || blogData.isMostLoved === true) : existingBlog.isMostLoved,
+       isPatner: blogData.isPatner !== undefined ? (blogData.isPatner === 'true' || blogData.isPatner === true) : existingBlog.isPatner,
+      
       codAvailable: blogData.codAvailable === 'false' ? false : true,
       stock: typeof blogData.stock !== 'undefined' ? Number(blogData.stock) : existingBlog.stock
     };
@@ -245,10 +251,10 @@ const updateBlogSections = async (req, res) => {
     console.log('Update data:', req.body);
 
     const { id } = req.params;
-    const { isBestSeller, isFeatured, isMostLoved } = req.body;
+    const { isBestSeller, isFeatured, isMostLoved , isPatner } = req.body;
 
     // Validate that at least one section flag is provided
-    if (isBestSeller === undefined && isFeatured === undefined && isMostLoved === undefined) {
+    if (isBestSeller === undefined && isFeatured === undefined && isMostLoved === undefined && isPatner === undefined) {
       console.log('Error: No section flags provided');
       return res.status(400).json({ message: "At least one section flag must be provided" });
     }
@@ -263,7 +269,8 @@ const updateBlogSections = async (req, res) => {
     console.log('Current blog sections:', {
       isBestSeller: blog.isBestSeller,
       isFeatured: blog.isFeatured,
-      isMostLoved: blog.isMostLoved
+      isMostLoved: blog.isMostLoved,
+      isPatner: blog.isPatner
     });
 
     // Build update object with only the provided flags
@@ -271,6 +278,7 @@ const updateBlogSections = async (req, res) => {
     if (isBestSeller !== undefined) updates.isBestSeller = isBestSeller;
     if (isFeatured !== undefined) updates.isFeatured = isFeatured;
     if (isMostLoved !== undefined) updates.isMostLoved = isMostLoved;
+    if (isPatner !== undefined) updates.isPatner = isPatner;
 
     console.log('Applying updates:', updates);
 
@@ -284,7 +292,8 @@ const updateBlogSections = async (req, res) => {
     console.log('Updated blog sections:', {
       isBestSeller: updatedBlog.isBestSeller,
       isFeatured: updatedBlog.isFeatured,
-      isMostLoved: updatedBlog.isMostLoved
+      isMostLoved: updatedBlog.isMostLoved,
+      isPatner: updatedBlog.isPatner
     });
 
     res.json({
