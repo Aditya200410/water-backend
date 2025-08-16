@@ -1,0 +1,26 @@
+{
+  "carousel": [
+    {
+      "id": "1",
+      "title": "Welcome to Riko Craft",
+      "subtitle": "Discover Authentic Indian Handicrafts",
+      "description": "Explore our curated collection of traditional and contemporary artworks",
+      "image": "1.png",
+      "buttonText": "Shop Now",
+      "buttonLink": "/shop",
+      "order": 1,
+      "isActive": true
+    },
+    {
+      "id": "2",
+      "title": "Traditional Art Forms",
+      "subtitle": "Dokra & Terracotta",
+      "description": "Explore the rich heritage of Indian craftsmanship",
+      "image": "2.mp4",
+      "buttonText": "Explore Collection",
+      "buttonLink": "/categories",
+      "order": 2,
+      "isActive": true
+    }
+  ]
+} 

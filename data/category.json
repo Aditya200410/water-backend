@@ -1,0 +1,28 @@
+{
+  "categories": [
+    {
+      "id": 1,
+      "name": "Wooden Craft",
+      "description": "Handcrafted wooden decor and figurines, showcasing traditional Indian craftsmanship and artistry.",
+      "image": "1.mp4"
+    },
+    {
+      "id": 2,
+      "name": "Terracotta Items",
+      "description": "Authentic terracotta art, including figurines and decor, crafted with age-old techniques for a rustic, cultural touch.",
+      "image": "2.mp4"
+    },
+    {
+      "id": 3,
+      "name": "Dokra Art",
+      "description": "Exquisite Dokra brass art, featuring spiritual and decorative pieces made with the ancient lost-wax casting method.",
+      "image": "3.mp4"
+    },
+    {
+      "id": 4,
+      "name": "Handmade Jewellery",
+      "description": "Unique handmade jewellery pieces crafted with care, blending tradition and modern style.",
+      "image": "4.mp4"
+    }
+  ]
+}
