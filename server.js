@@ -35,6 +35,8 @@ if (!process.env.JWT_SECRET_SELLER) {
 const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:5174',
+  'https://waterpark-frontend.vercel.app/',
+  'https://water-admin-lyart.vercel.app/',
   
 ];
 
