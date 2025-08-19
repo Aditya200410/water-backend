@@ -1,11 +1,13 @@
 const mongoose = require('mongoose');
 
+
 // Schema for individual items within an order
 const orderItemSchema = new mongoose.Schema({
   productId: { type: String, required: false },
   name: { type: String, required: true },
   price: { type: Number, required: true },
-  quantity: { type: Number, required: true },
+  adultquantity: { type: Number, required: true },
+  childquantity: { type: Number, required: true },
   image: { type: String, required: false }, // Store primary image for reference
 }, { _id: false });
 

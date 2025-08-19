@@ -1,0 +1,360 @@
+// File: admin/backend/controllers/bookingController.js
+const Booking = require("../models/Booking");
+const User = require("../models/User");
+const nodemailer = require("nodemailer");
+const crypto = require("crypto");
+const Razorpay = require("razorpay");
+
+// ----------------------------
+// Razorpay Initialization
+// ----------------------------
+let razorpay = null;
+if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET) {
+  console.log("[Init] Initializing Razorpay with provided credentials...");
+  razorpay = new Razorpay({
+    key_id: process.env.RAZORPAY_KEY_ID,
+    key_secret: process.env.RAZORPAY_KEY_SECRET,
+  });
+  console.log("[Init] Razorpay initialized successfully.");
+} else {
+  console.warn(
+    "[Init] Razorpay credentials missing. Online payments will fail until configured."
+  );
+}
+
+// ----------------------------
+// Email Helper
+// ----------------------------
+const sendEmail = async (to, subject, html, textFallback) => {
+  console.log("[sendEmail] Preparing to send email:", { to, subject });
+
+  const port = Number(process.env.SMTP_PORT) || 587;
+  const transporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST,
+    port,
+    secure: port === 465,
+    auth: {
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS,
+    },
+  });
+
+  const mailOptions = {
+    from: process.env.SMTP_FROM || process.env.SMTP_USER,
+    to: Array.isArray(to) ? to.join(",") : to,
+    subject,
+    html,
+    text: textFallback || html?.replace(/<[^>]*>?/gm, ""),
+  };
+
+  try {
+    console.log("[sendEmail] Sending email with options:", mailOptions);
+    await transporter.sendMail(mailOptions);
+    console.log("[sendEmail] Email sent successfully.");
+  } catch (error) {
+    console.error("[sendEmail] Error sending email:", error);
+  }
+};
+
+// ----------------------------
+// Utils
+// ----------------------------
+const toIntPaise = (amt) => {
+  console.log("[toIntPaise] Converting to paise:", amt);
+  const n = Number(amt);
+  if (!Number.isFinite(n)) {
+    console.warn("[toIntPaise] Invalid number:", amt);
+    return null;
+  }
+  return Math.round(n * 100);
+};
+
+const safeDate = (value) => {
+  console.log("[safeDate] Parsing date:", value);
+  const d = new Date(value);
+  return isNaN(d.getTime()) ? null : d;
+};
+
+// ----------------------------
+// Create Booking (with Razorpay integration)
+// ----------------------------
+exports.createBooking = async (req, res) => {
+  console.log("[createBooking] Request body:", req.body);
+
+  try {
+    const {
+      waterpark,
+      name,
+      email,
+      phone,
+      date,
+      adults,
+      children,
+      advanceAmount,
+      paymentType,
+      waterparkName,
+      total,
+    } = req.body;
+
+    // Validation
+    const missing = [];
+    if (!waterpark) missing.push("waterpark");
+    if (!name) missing.push("name");
+    if (!email) missing.push("email");
+    if (!phone) missing.push("phone");
+    if (!date) missing.push("date");
+    if (advanceAmount === undefined || advanceAmount === null) missing.push("advanceAmount");
+    if (!paymentType) missing.push("paymentType");
+    if (!waterparkName) missing.push("waterparkName");
+    if (total === undefined || total === null) missing.push("total");
+
+    if (missing.length) {
+      console.warn("[createBooking] Missing required fields:", missing);
+      return res.status(400).json({ success: false, message: "Missing required fields", missing });
+    }
+
+    const bookingDateObj = safeDate(date);
+    if (!bookingDateObj) {
+      console.warn("[createBooking] Invalid date format:", date);
+      return res.status(400).json({ success: false, message: "Invalid date format" });
+    }
+
+    const advancePaise = toIntPaise(advanceAmount);
+    const totalAmount = Number(total);
+    if (advancePaise === null || !Number.isFinite(totalAmount)) {
+      console.warn("[createBooking] Invalid amounts:", { advanceAmount, total });
+      return res.status(400).json({ success: false, message: "Invalid amounts" });
+    }
+
+    const bookingData = {
+      waterpark,
+      waterparkName,
+      name,
+      email,
+      phone,
+      date: bookingDateObj,
+      adults: Number(adults) || 0,
+      children: Number(children) || 0,
+      advanceAmount: Number(advanceAmount),
+      totalAmount,
+      paymentStatus: paymentType === "cash" ? "Pending" : "Initiated",
+      paymentType,
+      bookingDate: new Date(),
+    };
+
+    if (req.user?.userId) {
+      console.log("[createBooking] Associating booking with user:", req.user.userId);
+      bookingData.user = req.user.userId;
+    }
+
+    console.log("[createBooking] Booking data prepared:", bookingData);
+    const booking = new Booking(bookingData);
+    await booking.save();
+    console.log("[createBooking] Booking saved:", booking._id);
+
+    if (paymentType === "cash") {
+      console.log("[createBooking] Cash payment flow, returning booking directly.");
+      return res.status(201).json({ success: true, message: "Booking created successfully", booking });
+    }
+
+    if (!razorpay) {
+      console.error("[createBooking] Razorpay not configured.");
+      return res.status(500).json({ success: false, message: "Payment gateway not configured", booking });
+    }
+
+    const orderOptions = {
+      amount: advancePaise,
+      currency: "INR",
+      receipt: booking._id.toString(),
+      payment_capture: 1,
+      notes: { bookingId: booking._id.toString(), waterparkName, customerName: name, customerEmail: email, customerPhone: phone },
+    };
+
+    console.log("[createBooking] Creating Razorpay order with options:", orderOptions);
+    const order = await razorpay.orders.create(orderOptions);
+    console.log("[createBooking] Razorpay order created:", order.id);
+
+    return res.status(200).json({
+      success: true,
+      message: "Razorpay order created",
+      orderId: order.id,
+      booking,
+      key: process.env.RAZORPAY_KEY_ID,
+      amount: advancePaise,
+      currency: "INR",
+      name: "Waterpark Chalo",
+      description: `Booking for ${waterparkName}`,
+      prefill: { name, email, contact: phone },
+    });
+  } catch (error) {
+    console.error("[createBooking] Error:", error);
+    return res.status(500).json({ success: false, message: "Error creating booking.", error: error.message });
+  }
+};
+
+// ----------------------------
+// Verify Payment
+// ----------------------------
+exports.verifyPayment = async (req, res) => {
+  console.log("[verifyPayment] Request body:", req.body);
+
+  try {
+    const { razorpay_order_id, razorpay_payment_id, razorpay_signature, bookingId, redirect } = req.body;
+
+    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature || !bookingId) {
+      console.warn("[verifyPayment] Missing required fields.");
+      return res.status(400).json({ success: false, message: "Missing required fields" });
+    }
+
+    console.log("[verifyPayment] Generating signature for verification...");
+    const generatedSignature = crypto
+      .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET || "")
+      .update(`${razorpay_order_id}|${razorpay_payment_id}`)
+      .digest("hex");
+
+    console.log("[verifyPayment] Generated Signature:", generatedSignature);
+    if (generatedSignature !== razorpay_signature) {
+      console.warn("[verifyPayment] Signature mismatch.");
+      return res.status(400).json({ success: false, message: "Invalid payment signature." });
+    }
+
+    const booking = await Booking.findById(bookingId);
+    if (!booking) {
+      console.warn("[verifyPayment] Booking not found:", bookingId);
+      return res.status(404).json({ success: false, message: "Booking not found." });
+    }
+
+    booking.paymentStatus = "Completed";
+    booking.paymentType = "Razorpay";
+    booking.paymentId = razorpay_payment_id;
+    await booking.save();
+    console.log("[verifyPayment] Booking updated with payment success:", booking._id);
+
+    const frontendUrl = `http://localhost:5173/ticket?bookingId=${booking._id}`;
+    console.log("[verifyPayment] Ticket URL:", frontendUrl);
+
+    await sendEmail([booking.email, "am542062@gmail.com"], `Payment Confirmation for ${booking.waterparkName}`, "<html>...</html>");
+    console.log("[verifyPayment] Confirmation email sent.");
+
+    const shouldRedirect = typeof redirect === "string" ? redirect.toLowerCase() === "true" : Boolean(redirect);
+    if (shouldRedirect) {
+      console.log("[verifyPayment] Redirecting to frontend URL.");
+      return res.redirect(frontendUrl);
+    }
+
+    return res.status(200).json({ success: true, message: "Payment verified successfully", booking, frontendUrl });
+  } catch (error) {
+    console.error("[verifyPayment] Error:", error);
+    return res.status(500).json({ success: false, message: "Error verifying payment." });
+  }
+};
+
+// ----------------------------
+// Get Single Booking
+// ----------------------------
+exports.getSingleBooking = async (req, res) => {
+  console.log("[getSingleBooking] Params:", req.params);
+
+  try {
+    const { id } = req.params;
+    const booking = await Booking.findById(id);
+    if (!booking) {
+      console.warn("[getSingleBooking] Booking not found:", id);
+      return res.status(404).json({ success: false, message: "Booking not found." });
+    }
+    console.log("[getSingleBooking] Booking found:", booking._id);
+    return res.status(200).json({ success: true, booking });
+  } catch (error) {
+    console.error("[getSingleBooking] Error:", error);
+    return res.status(500).json({ success: false, message: "Error fetching booking." });
+  }
+};
+
+// ----------------------------
+// Get All Bookings
+// ----------------------------
+exports.getAllBookings = async (req, res) => {
+  console.log("[getAllBookings] Fetching all bookings...");
+  try {
+    const bookings = await Booking.find().sort({ bookingDate: -1 });
+    console.log("[getAllBookings] Total bookings found:", bookings.length);
+    return res.status(200).json(bookings);
+  } catch (error) {
+    console.error("[getAllBookings] Error:", error);
+    return res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
+// ----------------------------
+// Get User Bookings
+// ----------------------------
+exports.getUserBookings = async (req, res) => {
+  console.log("[getUserBookings] Request user:", req.user, "Request body:", req.body);
+
+  try {
+    let query = {};
+    let role = "guest";
+
+    if (req.user?.userId) {
+      console.log("[getUserBookings] Fetching user from DB:", req.user.userId);
+      const user = await User.findById(req.user.userId).select("email role");
+      if (!user) {
+        console.warn("[getUserBookings] User not found:", req.user.userId);
+        return res.status(404).json({ success: false, message: "User not found." });
+      }
+      query = { email: user.email };
+      role = user.role || "user";
+    } else if (req.body?.email) {
+      query = { email: req.body.email };
+      role = "guest";
+    } else {
+      console.warn("[getUserBookings] No email or auth provided.");
+      return res.status(400).json({ success: false, message: "Provide email or authenticate." });
+    }
+
+    console.log("[getUserBookings] Querying bookings with:", query);
+    const bookings = await Booking.find(query).sort({ bookingDate: -1 });
+    console.log("[getUserBookings] Bookings found:", bookings.length);
+
+    if (!bookings.length) {
+      return res.status(200).json({ success: false, message: "No bookings found.", role });
+    }
+
+    return res.status(200).json({ success: true, role, bookings });
+  } catch (error) {
+    console.error("[getUserBookings] Error:", error);
+    return res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
+// ----------------------------
+// Test Razorpay Config
+// ----------------------------
+exports.testRazorpayConfig = async (req, res) => {
+  console.log("[testRazorpayConfig] Testing Razorpay setup...");
+  try {
+    const config = {
+      key_id: process.env.RAZORPAY_KEY_ID ? "Configured" : "Missing",
+      key_secret: process.env.RAZORPAY_KEY_SECRET ? "Configured" : "Missing",
+      razorpay_initialized: razorpay ? "Yes" : "No",
+    };
+    console.log("[testRazorpayConfig] Config:", config);
+
+    if (!razorpay) {
+      console.warn("[testRazorpayConfig] Razorpay not configured.");
+      return res.status(500).json({ success: false, message: "Razorpay not configured", config });
+    }
+
+    const testOrder = await razorpay.orders.create({
+      amount: 100,
+      currency: "INR",
+      receipt: "test_receipt_" + Date.now(),
+    });
+
+    console.log("[testRazorpayConfig] Test order created:", testOrder.id);
+    return res.status(200).json({ success: true, message: "Razorpay configured", config, test_order: testOrder.id });
+  } catch (error) {
+    console.error("[testRazorpayConfig] Error:", error);
+    return res.status(500).json({ success: false, message: "Razorpay test failed", error: error.message });
+  }
+};

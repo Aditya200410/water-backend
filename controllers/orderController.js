@@ -61,7 +61,7 @@ const createOrder = async (req, res) => {
     // Validate each item has required fields
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
-      const itemRequiredFields = ['name', 'price', 'quantity'];
+      const itemRequiredFields = ['name', 'price', 'adultquantity', 'childquantity'];
       const missingItemFields = itemRequiredFields.filter(field => !item[field]);
       
       if (missingItemFields.length > 0) {
@@ -157,7 +157,8 @@ const createOrder = async (req, res) => {
       if (item.productId) {
         const product = await Product.findById(item.productId);
         if (product) {
-          product.stock = Math.max(0, (product.stock || 0) - (item.quantity || 1));
+        product.stock = Math.max(0, (product.stock || 0) - ((item.adultquantity || 0) + (item.childquantity || 0)));
+
           if (product.stock === 0) {
             product.inStock = false;
           }
@@ -242,7 +243,8 @@ async function sendOrderConfirmationEmail(order) {
   const itemsHtml = items.map(item => `
     <tr>
       <td style="padding: 8px; border: 1px solid #eee;">${item.name}</td>
-      <td style="padding: 8px; border: 1px solid #eee; text-align: center;">${item.quantity}</td>
+      <td style="padding: 8px; border: 1px solid #eee; text-align: center;">${item.adultquantity}</td>
+       <td style="padding: 8px; border: 1px solid #eee; text-align: center;">${item.childquantity}</td>
       <td style="padding: 8px; border: 1px solid #eee; text-align: right;">₹${item.price}</td>
     </tr>
   `).join('');
@@ -276,7 +278,8 @@ async function sendOrderConfirmationEmail(order) {
           <thead>
             <tr>
               <th style="padding: 8px; border: 1px solid #eee; background: #f8f9fa;">Item</th>
-              <th style="padding: 8px; border: 1px solid #eee; background: #f8f9fa;">Qty</th>
+              <th style="padding: 8px; border: 1px solid #eee; background: #f8f9fa;">adult Qty</th>
+              <th style="padding: 8px; border: 1px solid #eee; background: #f8f9fa;">child Qty</th>
               <th style="padding: 8px; border: 1px solid #eee; background: #f8f9fa;">Price</th>
             </tr>
           </thead>
@@ -306,7 +309,7 @@ async function sendOrderConfirmationEmail(order) {
     </div>
   `;
 
-  const textBody = `Dear ${customerName},\n\nThank you for your order! Your order has been placed successfully.\n\nOrder Summary:\n${items.map(item => `- ${item.name} x${item.quantity} (₹${item.price})`).join('\n')}\nTotal: ₹${totalAmount}\n\nShipping Address:\n${address.street || ''}\n${address.city || ''}, ${address.state || ''} - ${address.pincode || ''}\n${address.country || ''}\n\nWe will notify you when your order is shipped.\n\nWarm regards,\nTeam Rikocraft\nwww.rikocraft.com\nCare@Rikocraft.com`;
+  const textBody = `Dear ${customerName},\n\nThank you for your order! Your order has been placed successfully.\n\nOrder Summary:\n${items.map(item => `- ${item.name} x${item.adultquantity}x${item.childquantity} (₹${item.price})`).join('\n')}\nTotal: ₹${totalAmount}\n\nShipping Address:\n${address.street || ''}\n${address.city || ''}, ${address.state || ''} - ${address.pincode || ''}\n${address.country || ''}\n\nWe will notify you when your order is shipped.\n\nWarm regards,\nTeam Rikocraft\nwww.rikocraft.com\nCare@Rikocraft.com`;
 
   try {
     await transporter.sendMail({
@@ -332,7 +335,8 @@ async function sendOrderStatusUpdateEmail(order) {
   const itemsHtml = items.map(item => `
     <tr>
       <td style="padding: 8px; border: 1px solid #eee;">${item.name}</td>
-      <td style="padding: 8px; border: 1px solid #eee; text-align: center;">${item.quantity}</td>
+      <td style="padding: 8px; border: 1px solid #eee; text-align: center;">${item.adultquantity}</td>
+      <td style="padding: 8px; border: 1px solid #eee; text-align: center;">${item.childquantity}</td>
       <td style="padding: 8px; border: 1px solid #eee; text-align: right;">₹${item.price}</td>
     </tr>
   `).join('');
@@ -367,7 +371,8 @@ async function sendOrderStatusUpdateEmail(order) {
           <thead>
             <tr>
               <th style="padding: 8px; border: 1px solid #eee; background: #f8f9fa;">Item</th>
-              <th style="padding: 8px; border: 1px solid #eee; background: #f8f9fa;">Qty</th>
+              <th style="padding: 8px; border: 1px solid #eee; background: #f8f9fa;">adult Qty</th>
+                     <th style="padding: 8px; border: 1px solid #eee; background: #f8f9fa;">child Qty</th>
               <th style="padding: 8px; border: 1px solid #eee; background: #f8f9fa;">Price</th>
             </tr>
           </thead>
@@ -402,7 +407,7 @@ async function sendOrderStatusUpdateEmail(order) {
     </div>
   `;
 
-  const textBody = `Dear ${customerName},\n\nThe status of your Rikocraft order has been updated to: ${orderStatus}.\n\nOrder Summary:\n${items.map(item => `- ${item.name} x${item.quantity} (₹${item.price})`).join('\n')}\nTotal: ₹${totalAmount}\n\nDelivery Address:\n${address.street || ''}\n${address.city || ''}, ${address.state || ''} - ${address.pincode || ''}\n${address.country || ''}\n\nThank you for shopping with Rikocraft! Check out more at rikocraft.com\n\nWarm regards,\nTeam Rikocraft\nwww.rikocraft.com\nCare@Rikocraft.com`;
+  const textBody = `Dear ${customerName},\n\nThe status of your Rikocraft order has been updated to: ${orderStatus}.\n\nOrder Summary:\n${items.map(item => `- ${item.name} x${item.adultquantity}x${item.childquantity} (₹${item.price})`).join('\n')}\nTotal: ₹${totalAmount}\n\nDelivery Address:\n${address.street || ''}\n${address.city || ''}, ${address.state || ''} - ${address.pincode || ''}\n${address.country || ''}\n\nThank you for shopping with Rikocraft! Check out more at rikocraft.com\n\nWarm regards,\nTeam Rikocraft\nwww.rikocraft.com\nCare@Rikocraft.com`;
 
   try {
     await transporter.sendMail({

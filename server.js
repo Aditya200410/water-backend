@@ -21,6 +21,7 @@ const heroCarouselRoutes = require('./routes/heroCarousel');
 const sellerRoutes = require('./routes/seller');
 const couponRoutes = require('./routes/coupon');
 const crypto = require('crypto');
+const bookingRoutes = require('./routes/bookingRoutes');
 const settingsController = require('./controllers/settingsController');
 const app = express();
 
@@ -148,6 +149,7 @@ app.use('/api/reviews', require('./routes/reviews'));
 app.use('/api/settings', require('./routes/settings'));
 app.use('/api/msg91', require('./routes/msg91'));
 app.use('/api/blog', require('./routes/blogs')); // Blog routes
+app.use('/api/bookings', bookingRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
