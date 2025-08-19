@@ -270,6 +270,28 @@ exports.getSingleBooking = async (req, res) => {
   }
 };
 
+
+//get booking by email 
+// Get all orders for a specific user by email
+exports.getOrdersByEmail = async (req, res) => {
+  try {
+    const userEmail = req.query.email;
+    if (!userEmail) {
+      return res.status(400).json({ success: false, message: 'Email query parameter is required.' });
+    }
+
+    // Case-insensitive search for email in Booking collection
+    const orders = await Booking.find({ email: { $regex: new RegExp(`^${userEmail}$`, 'i') } })
+      .sort({ bookingDate: -1 });
+
+    res.status(200).json({ success: true, orders });
+  } catch (error) {
+    console.error('Error fetching orders:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch orders.', error: error.message });
+  }
+};
+
+
 // ----------------------------
 // Get All Bookings
 // ----------------------------
