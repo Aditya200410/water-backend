@@ -86,7 +86,10 @@ const createProductWithFiles = async (req, res) => {
       "utility",
       "care",
       "price",
-      "regularPrice"
+      "regularprice",
+      "adultprice",
+      "childprice",
+      "weekendprice"
     ];
 
     console.log('Validating required fields...');
@@ -127,7 +130,10 @@ const createProductWithFiles = async (req, res) => {
       name: productData.name,
       category: productData.category,
       price: productData.price,
-      images: imagePaths
+      adultprice: productData.adultprice,
+      childprice: productData.childprice,
+      weekendprice: productData.weekendprice,
+            images: imagePaths
     });
 
     const newProduct = new Product({
@@ -141,7 +147,10 @@ const createProductWithFiles = async (req, res) => {
       utility: productData.utility,
       care: productData.care,
       price: parseFloat(productData.price),
-      regularPrice: parseFloat(productData.regularPrice),
+      regularprice: parseFloat(productData.regularprice),
+           adultprice: parseFloat(productData.adultprice),
+                childprice: parseFloat(productData.childprice),
+      weekendprice: productData.weekendprice ? parseFloat(productData.weekendprice) : undefined,
       image: imagePaths[0], // Main image Cloudinary URL
       images: imagePaths, // All Cloudinary URLs
       inStock: productData.inStock === 'true' || productData.inStock === true,
@@ -234,7 +243,11 @@ const updateProductWithFiles = async (req, res) => {
       utility: productData.utility || existingProduct.utility,
       care: productData.care || existingProduct.care,
       price: productData.price ? parseFloat(productData.price) : existingProduct.price,
-      regularPrice: productData.regularPrice ? parseFloat(productData.regularPrice) : existingProduct.regularPrice,
+      regularprice: productData.regularprice ? parseFloat(productData.regularprice) : existingProduct.regularprice,
+      
+    adultprice: productData.adultprice ? parseFloat(productData.adultprice) : existingProduct.adultprice,
+      childprice: productData.childprice ? parseFloat(productData.childprice) : existingProduct,
+      weekendprice: productData.weekendprice ? parseFloat(productData.weekendprice) : existingProduct.weekendprice,
       image: imagePaths[0],
       images: imagePaths,
       inStock: productData.inStock !== undefined ? (productData.inStock === 'true' || productData.inStock === true) : existingProduct.inStock,
