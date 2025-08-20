@@ -7,6 +7,10 @@ const productSchema = new mongoose.Schema({
   utility: { type: String, required: true, trim: true },
   care: { type: String, required: true, trim: true },
   price: { type: Number, required: true },  // weekend child price
+
+  advanceprice: { type: Number, required: true }, // advance booking price
+  terms: { type: String, required: true, trim: true },
+  
   regularprice: { type: Number, required: true },
   adultprice: { type: Number, required: true },
   childprice: { type: Number, required: true },
