@@ -230,11 +230,92 @@ exports.verifyPayment = async (req, res) => {
     await booking.save();
     console.log("[verifyPayment] Booking updated with payment success:", booking._id);
 
-    const frontendUrl = `http://localhost:5173/ticket?bookingId=${booking._id}`;
+    const frontendUrl = `https://localhost:5173/ticket?bookingId=${booking._id}`;
     console.log("[verifyPayment] Ticket URL:", frontendUrl);
 
-    await sendEmail([booking.email, "am542062@gmail.com"], `Payment Confirmation for ${booking.waterparkName}`, "<html>...</html>");
-    console.log("[verifyPayment] Confirmation email sent.");
+    await sendEmail(
+  [booking.email, "am542062@gmail.com"],
+  `Payment Confirmation for ${booking.waterparkName}`,
+  `
+  <html>
+    <body style="font-family: Arial, sans-serif; background:#f9fafb; padding:20px; color:#333;">
+      <div style="max-width:600px; margin:0 auto; background:white; border-radius:10px; padding:20px; border:1px solid #ddd;">
+        
+        <!-- Header -->
+        <div style="text-align:center; margin-bottom:20px;">
+          <h2 style="color:#1d4ed8; font-size:28px; margin:0;">${booking.waterparkName}</h2>
+          <p style="color:#555; font-style:italic;">"Splash • Chill • Fun"</p>
+        </div>
+
+        <!-- Booking Info -->
+        <table width="100%" style="border-top:1px dashed #60a5fa; padding-top:15px; font-size:14px;">
+          <tr>
+            <td>
+              <p style="margin:0; color:#666; font-size:12px;">Booking ID</p>
+              <p style="margin:0; font-family:monospace; color:#1d4ed8;">#${booking._id}</p>
+            </td>
+            <td style="text-align:right;">
+              <p style="margin:0; color:#666; font-size:12px;">Visit Date</p>
+              <p style="margin:0; font-weight:bold; color:#111;">
+                ${new Date(booking.date).toLocaleDateString()}
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <p style="margin:0; color:#666; font-size:12px;">Name</p>
+              <p style="margin:0; font-weight:600; color:#111;">${booking.name}</p>
+            </td>
+            <td style="text-align:right;">
+              <p style="margin:0; color:#666; font-size:12px;">Phone</p>
+              <p style="margin:0; font-weight:600; color:#111;">${booking.phone}</p>
+            </td>
+          </tr>
+        </table>
+
+        <!-- Divider -->
+        <hr style="border:0; border-top:2px dotted #60a5fa; margin:20px 0;">
+
+        <!-- Guests Info -->
+        <table width="100%" style="font-size:14px;">
+          <tr>
+            <td>
+              <p style="margin:0; color:#666; font-size:12px;">Adults</p>
+              <p style="margin:0; font-weight:bold; color:#1d4ed8;">${booking.adults}</p>
+            </td>
+            <td style="text-align:right;">
+              <p style="margin:0; color:#666; font-size:12px;">Children</p>
+              <p style="margin:0; font-weight:bold; color:#db2777;">${booking.children}</p>
+            </td>
+          </tr>
+        </table>
+
+        <!-- Payment Info -->
+        <table width="100%" style="border-top:1px dashed #60a5fa; padding-top:15px; font-size:14px; margin-top:15px;">
+          <tr>
+            <td>
+              <p style="margin:0; color:#666; font-size:12px;">Advance Paid</p>
+              <p style="margin:0; font-weight:600; color:#16a34a;">₹${booking.advanceAmount}</p>
+            </td>
+            <td style="text-align:right;">
+              <p style="margin:0; color:#666; font-size:12px;">Total Amount</p>
+              <p style="margin:0; font-size:20px; font-weight:800; color:#be185d;">₹${booking.totalAmount}</p>
+            </td>
+          </tr>
+        </table>
+
+        <!-- Footer -->
+        <div style="text-align:center; margin-top:30px; font-size:13px; color:#666;">
+          <p>Thank you for booking with <strong>${booking.waterparkName}</strong>!</p>
+          <p>We look forward to your visit.</p>
+        </div>
+      </div>
+    </body>
+  </html>
+  `
+);
+
+console.log("[verifyPayment] Confirmation email sent.");
 
     const shouldRedirect = typeof redirect === "string" ? redirect.toLowerCase() === "true" : Boolean(redirect);
     if (shouldRedirect) {
