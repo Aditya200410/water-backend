@@ -19,13 +19,15 @@ const bookingSchema = new mongoose.Schema({
   bookingDate: { type: Date, default: Date.now }, // Set default to current date
   adults: { type: Number, default: 0 }, // Default to 0 if not provided
   children: { type: Number, default: 0 }, // Default to 0 if not provided
-  adultPrice: { type: Number, default: 0 }, // Default to 0
-  childPrice: { type: Number, default: 0 }, // Default to 0
-  discountPercentage: { type: Number, default: 0 }, // Default to 0
+
+
   advanceAmount: { type: Number, required: true }, // Total price is mandatory
   paymentId: String,
   paymentStatus: { type: String, default: "Pending" },
-  totalAmount : { type: Number, required: true }
+  
+  totalAmount : { type: Number, required: true ,default: 0}, // Total price is mandatory
+
+  leftamount: { type: Number, required:true }, // Amount left to pay
 });
 
 module.exports = mongoose.model("Booking", bookingSchema);

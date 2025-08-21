@@ -91,6 +91,7 @@ exports.createBooking = async (req, res) => {
       adults,
       children,
       advanceAmount,
+   
       paymentType,
       waterparkName,
       total,
@@ -104,6 +105,7 @@ exports.createBooking = async (req, res) => {
     if (!phone) missing.push("phone");
     if (!date) missing.push("date");
     if (advanceAmount === undefined || advanceAmount === null) missing.push("advanceAmount");
+  
     if (!paymentType) missing.push("paymentType");
     if (!waterparkName) missing.push("waterparkName");
     if (total === undefined || total === null) missing.push("total");
@@ -121,10 +123,16 @@ exports.createBooking = async (req, res) => {
 
     const advancePaise = toIntPaise(advanceAmount);
     const totalAmount = Number(total);
+
+         const calculatedLeftAmount = totalAmount - Number(advanceAmount);
+
+
     if (advancePaise === null || !Number.isFinite(totalAmount)) {
       console.warn("[createBooking] Invalid amounts:", { advanceAmount, total });
       return res.status(400).json({ success: false, message: "Invalid amounts" });
     }
+ 
+
 
     const bookingData = {
       waterpark,
@@ -137,6 +145,7 @@ exports.createBooking = async (req, res) => {
       children: Number(children) || 0,
       advanceAmount: Number(advanceAmount),
       totalAmount,
+      leftamount: calculatedLeftAmount,
       paymentStatus: paymentType === "cash" ? "Pending" : "Initiated",
       paymentType,
       bookingDate: new Date(),
@@ -300,6 +309,10 @@ exports.verifyPayment = async (req, res) => {
             <td style="text-align:right;">
               <p style="margin:0; color:#666; font-size:12px;">Total Amount</p>
               <p style="margin:0; font-size:20px; font-weight:800; color:#be185d;">₹${booking.totalAmount}</p>
+            </td>
+             <td style="text-align:right;">
+              <p style="margin:0; color:#666; font-size:12px;">Left Amount</p>
+              <p style="margin:0; font-size:20px; font-weight:800; color:#be185d;">₹${booking.leftamount}</p>
             </td>
           </tr>
         </table>
