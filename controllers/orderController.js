@@ -6,6 +6,7 @@ const ordersJsonPath = path.join(__dirname, '../data/orders.json');
 const Product = require('../models/Product');
 const commissionController = require('./commissionController');
 const nodemailer = require('nodemailer');
+const { sendWhatsAppMessage } = require("../service/whatsappService.js");
 
 // Setup nodemailer transporter (reuse config from auth.js)
 const transporter = nodemailer.createTransport({
@@ -118,7 +119,14 @@ const createOrder = async (req, res) => {
     });
 
     const savedOrder = await newOrder.save();
-
+    
+ // 2. Send WhatsApp confirmation
+    await sendWhatsAppMessage({
+      id: savedOrder._id.toString(),
+      customerName: savedOrder.customerName,
+      customerPhone: savedOrder.phone,
+      totalAmount: savedOrder.totalAmount
+    });
     // Calculate commission if seller token is provided
     let commission = 0;
     let seller = null;
@@ -237,7 +245,7 @@ async function appendOrderToJson(order) {
 // Helper to send order confirmation email
 async function sendOrderConfirmationEmail(order) {
   const { email, customerName, items, totalAmount, address } = order;
-  const subject = 'Your Rikocraft Order Confirmation';
+  const subject = 'Your Order Confirmation';
 
   // Build order items table
   const itemsHtml = items.map(item => `
@@ -258,58 +266,58 @@ async function sendOrderConfirmationEmail(order) {
     </div>
   `;
 
-  const htmlBody = `
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9f9f9;">
-      <div style="background-color: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
-        <div style="text-align: center; margin-bottom: 30px;">
-          <h1 style="color: #333; margin: 0; font-size: 24px;">Rikocraft</h1>
-          <p style="color: #666; margin: 5px 0; font-size: 14px;">Where heritage meets craftsmanship</p>
-        </div>
-        <div style="margin-bottom: 25px;">
-          <p style="color: #333; font-size: 16px; line-height: 1.6; margin: 0;">
-            Dear <strong>${customerName}</strong>,
-          </p>
-          <p style="color: #333; font-size: 16px; line-height: 1.6; margin: 15px 0;">
-            Thank you for your order! Your order has been placed successfully. Here are your order details:
-          </p>
-        </div>
-        ${addressHtml}
-        <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
-          <thead>
-            <tr>
-              <th style="padding: 8px; border: 1px solid #eee; background: #f8f9fa;">Item</th>
-              <th style="padding: 8px; border: 1px solid #eee; background: #f8f9fa;">adult Qty</th>
-              <th style="padding: 8px; border: 1px solid #eee; background: #f8f9fa;">child Qty</th>
-              <th style="padding: 8px; border: 1px solid #eee; background: #f8f9fa;">Price</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${itemsHtml}
-          </tbody>
-        </table>
-        <div style="text-align: right; margin-bottom: 20px;">
-          <strong>Total: ₹${totalAmount}</strong>
-        </div>
-        <div style="margin: 25px 0;">
-          <p style="color: #333; font-size: 16px; line-height: 1.6; margin: 0;">
-            We will notify you when your order is shipped. Thank you for shopping with Rikocraft!
-          </p>
-        </div>
-        <div style="border-top: 1px solid #eee; padding-top: 20px; margin-top: 30px;">
-          <p style="color: #666; font-size: 14px; margin: 0; line-height: 1.6;">
-            <strong>Warm regards,</strong><br>
-            Team Rikocraft
-          </p>
-          <div style="margin-top: 15px; color: #666; font-size: 12px;">
-            <p style="margin: 5px 0;">🌐 www.rikocraft.com</p>
-            <p style="margin: 5px 0;">📩 Email: Care@Rikocraft.com</p>
-          </div>
+const htmlBody = ` 
+  <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background: linear-gradient(135deg, #a2d4f4, #e0f7fa);">
+    <div style="background-color: #ffffff; padding: 30px; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.15);">
+      <div style="text-align: center; margin-bottom: 30px;">
+        <h1 style="color: #0288d1; margin: 0; font-size: 28px;">💦 Welcome to WaterPark Chalo! 🌊</h1>
+        <p style="color: #0077b6; margin: 10px 0; font-size: 16px;">Splash. Slide. Smile. Repeat!</p>
+      </div>
+      <div style="margin-bottom: 25px;">
+        <p style="color: #01579b; font-size: 16px; line-height: 1.6; margin: 0;">
+          Hey <strong>${customerName}</strong>! 🎉
+        </p>
+        <p style="color: #01579b; font-size: 16px; line-height: 1.6; margin: 15px 0;">
+          Thanks for booking your WaterPark adventure! 🌴 Your tickets are confirmed and here are the details:
+        </p>
+      </div>
+      ${addressHtml}
+      <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px; border-radius: 8px; overflow: hidden;">
+        <thead>
+          <tr>
+            <th style="padding: 10px; border: 1px solid #b3e5fc; background: #e1f5fe; color: #01579b;">Pass</th>
+            <th style="padding: 10px; border: 1px solid #b3e5fc; background: #e1f5fe; color: #01579b;">Adults</th>
+            <th style="padding: 10px; border: 1px solid #b3e5fc; background: #e1f5fe; color: #01579b;">Kids</th>
+            <th style="padding: 10px; border: 1px solid #b3e5fc; background: #e1f5fe; color: #01579b;">Price</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${itemsHtml}
+        </tbody>
+      </table>
+      <div style="text-align: right; margin-bottom: 20px; font-size: 18px; color: #0277bd;">
+        <strong>Total Splash Fun: ₹${totalAmount}</strong>
+      </div>
+      <div style="margin: 25px 0;">
+        <p style="color: #01579b; font-size: 16px; line-height: 1.6; margin: 0;">
+          🌊 Get ready to dive into unlimited fun! Show this ticket at the entrance and let the water adventures begin. 🏄‍♂️
+        </p>
+      </div>
+      <div style="border-top: 1px solid #b3e5fc; padding-top: 20px; margin-top: 30px;">
+        <p style="color: #0277bd; font-size: 14px; margin: 0; line-height: 1.6;">
+          <strong>See you soon at the poolside,</strong><br>
+          Team WaterPark Chalo 💦
+        </p>
+        <div style="margin-top: 15px; color: #0277bd; font-size: 12px;">
+          <p style="margin: 5px 0;">🌐 www.waterparkchalo.com</p>
+          <p style="margin: 5px 0;">📩 Email: care@waterparkchalo.com</p>
         </div>
       </div>
     </div>
-  `;
+  </div>
+`;
 
-  const textBody = `Dear ${customerName},\n\nThank you for your order! Your order has been placed successfully.\n\nOrder Summary:\n${items.map(item => `- ${item.name} x${item.adultquantity}x${item.childquantity} (₹${item.price})`).join('\n')}\nTotal: ₹${totalAmount}\n\nShipping Address:\n${address.street || ''}\n${address.city || ''}, ${address.state || ''} - ${address.pincode || ''}\n${address.country || ''}\n\nWe will notify you when your order is shipped.\n\nWarm regards,\nTeam Rikocraft\nwww.rikocraft.com\nCare@Rikocraft.com`;
+  const textBody = `Dear ${customerName},\n\nThank you for your order! Your order has been placed successfully.\n\nOrder Summary:\n${items.map(item => `- ${item.name} x${item.adultquantity}x${item.childquantity} (₹${item.price})`).join('\n')}\nTotal: ₹${totalAmount}\n\nShipping Address:\n${address.street || ''}\n${address.city || ''}, ${address.state || ''} - ${address.pincode || ''}\n${address.country || ''}\n\nWe will notify you when your order is shipped.\n\nWarm regards,\nTeam waterpark chalo\nwww.waterpark chalo.com\nCare@waterpark chalo.com`;
 
   try {
     await transporter.sendMail({
@@ -329,7 +337,7 @@ async function sendOrderConfirmationEmail(order) {
 // Helper to send order status update email
 async function sendOrderStatusUpdateEmail(order) {
   const { email, customerName, orderStatus, items, totalAmount, address } = order;
-  const subject = `Your Rikocraft Order Status Update: ${orderStatus.charAt(0).toUpperCase() + orderStatus.slice(1)}`;
+  const subject = `Your waterpark chalo Order Status Update: ${orderStatus.charAt(0).toUpperCase() + orderStatus.slice(1)}`;
 
   // Build order items table
   const itemsHtml = items.map(item => `
@@ -354,7 +362,7 @@ async function sendOrderStatusUpdateEmail(order) {
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9f9f9;">
       <div style="background-color: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
         <div style="text-align: center; margin-bottom: 30px;">
-          <h1 style="color: #333; margin: 0; font-size: 24px;">Rikocraft</h1>
+          <h1 style="color: #333; margin: 0; font-size: 24px;">waterpark chalo</h1>
           <p style="color: #666; margin: 5px 0; font-size: 14px;">Where heritage meets craftsmanship</p>
         </div>
         <div style="margin-bottom: 25px;">
@@ -390,24 +398,24 @@ async function sendOrderStatusUpdateEmail(order) {
         </div>
         <div style="margin: 25px 0;">
           <p style="color: #333; font-size: 16px; line-height: 1.6; margin: 0;">
-            Thank you for shopping with Rikocraft! We hope you enjoy your purchase. Don’t forget to check out our other unique handmade products at <a href="https://www.rikocraft.com" style="color: #007bff;">rikocraft.com</a>.
+            Thank you for shopping with waterpark chalo! We hope you enjoy your purchase. Don’t forget to check out our other unique handmade products at <a href="https://www.waterpark chalo.com" style="color: #007bff;">waterpark chalo.com</a>.
           </p>
         </div>
         <div style="border-top: 1px solid #eee; padding-top: 20px; margin-top: 30px;">
           <p style="color: #666; font-size: 14px; margin: 0; line-height: 1.6;">
             <strong>Warm regards,</strong><br>
-            Team Rikocraft
+            Team waterpark chalo
           </p>
           <div style="margin-top: 15px; color: #666; font-size: 12px;">
-            <p style="margin: 5px 0;">🌐 www.rikocraft.com</p>
-            <p style="margin: 5px 0;">📩 Email: Care@Rikocraft.com</p>
+            <p style="margin: 5px 0;">🌐 www.waterpark chalo.com</p>
+            <p style="margin: 5px 0;">📩 Email: Care@waterpark chalo.com</p>
           </div>
         </div>
       </div>
     </div>
   `;
 
-  const textBody = `Dear ${customerName},\n\nThe status of your Rikocraft order has been updated to: ${orderStatus}.\n\nOrder Summary:\n${items.map(item => `- ${item.name} x${item.adultquantity}x${item.childquantity} (₹${item.price})`).join('\n')}\nTotal: ₹${totalAmount}\n\nDelivery Address:\n${address.street || ''}\n${address.city || ''}, ${address.state || ''} - ${address.pincode || ''}\n${address.country || ''}\n\nThank you for shopping with Rikocraft! Check out more at rikocraft.com\n\nWarm regards,\nTeam Rikocraft\nwww.rikocraft.com\nCare@Rikocraft.com`;
+  const textBody = `Dear ${customerName},\n\nThe status of your waterpark chalo order has been updated to: ${orderStatus}.\n\nOrder Summary:\n${items.map(item => `- ${item.name} x${item.adultquantity}x${item.childquantity} (₹${item.price})`).join('\n')}\nTotal: ₹${totalAmount}\n\nDelivery Address:\n${address.street || ''}\n${address.city || ''}, ${address.state || ''} - ${address.pincode || ''}\n${address.country || ''}\n\nThank you for shopping with waterpark chalo! Check out more at waterpark chalo.com\n\nWarm regards,\nTeam waterpark chalo\nwww.waterpark chalo.com\nCare@waterpark chalo.com`;
 
   try {
     await transporter.sendMail({
