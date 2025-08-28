@@ -9,15 +9,16 @@ const productSchema = new mongoose.Schema({
   care: { type: String, required: true, trim: true },
   
   price: { type: Number, required: true },  // weekend child price
-
-  advanceprice: { type: Number, required: true }, // advance booking price
+  weekendprice: { type: Number, required: false }, //weekend adult price
+  weekendadvance:{ type: Number, required: false }, //weekend advanec
+  advanceprice: { type: Number, required: true }, // advance booking price for all day
   terms: { type: String, required: true, trim: true },
   
   regularprice: { type: Number, required: true }, //regularprice
   adultprice: { type: Number, required: true }, //adult price
   childprice: { type: Number, required: true },  //child price
-  weekendprice: { type: Number, required: false }, //weekend adult price
-  image: { type: String, required: true },          //weekend adult price
+
+  image: { type: String, required: true },          
   images: [{ type: String }],
   inStock: { type: Boolean, default: true },
   stock: { type: Number, default: 10 },
