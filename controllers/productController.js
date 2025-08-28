@@ -78,7 +78,7 @@ const createProductWithFiles = async (req, res) => {
     // Validate required fields
     const requiredFields = [
       "name",
-     
+     "sd",
       "description",
       
       "category",
@@ -132,6 +132,7 @@ const createProductWithFiles = async (req, res) => {
       name: productData.name,
       category: productData.category,
       price: productData.price,
+      sd:productData.sd,
       adultprice: productData.adultprice,
       childprice: productData.childprice,
       weekendprice: productData.weekendprice,
@@ -144,6 +145,7 @@ const createProductWithFiles = async (req, res) => {
       description: productData.description,
       size: productData.size,
       colour: productData.colour,
+      sd:productData.sd,
       category: productData.category,
       weight: productData.weight,
       utility: productData.utility,
@@ -240,6 +242,7 @@ const updateProductWithFiles = async (req, res) => {
       name: productData.name || existingProduct.name,
       material: productData.material || existingProduct.material,
       description: productData.description || existingProduct.description,
+        sd:productData.sd || existingProduct.sd,
       size: productData.size || existingProduct.size,
       colour: productData.colour || existingProduct.colour,
       category: productData.category || existingProduct.category,
@@ -250,7 +253,7 @@ const updateProductWithFiles = async (req, res) => {
       terms: productData.terms || existingProduct.terms,
       price: productData.price ? parseFloat(productData.price) : existingProduct.price,
       regularprice: productData.regularprice ? parseFloat(productData.regularprice) : existingProduct.regularprice,
-      
+    
     adultprice: productData.adultprice ? parseFloat(productData.adultprice) : existingProduct.adultprice,
       childprice: productData.childprice ? parseFloat(productData.childprice) : existingProduct,
       weekendprice: productData.weekendprice ? parseFloat(productData.weekendprice) : existingProduct.weekendprice,
