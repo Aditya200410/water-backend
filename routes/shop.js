@@ -20,37 +20,45 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-// Multer storage for Cloudinary
+// --- 👇 MODIFIED SECTION: Dynamic storage for images AND videos ---
+
+// Create a storage engine that handles different file types dynamically
 const storage = new CloudinaryStorage({
   cloudinary: cloudinary,
-  params: {
-    folder: 'pawnshop-products',
-    allowed_formats: ['jpg', 'jpeg', 'png', 'webp'],
-    transformation: [{ width: 800, height: 800, crop: 'limit' }],
+  params: async (req, file) => {
+    // This function runs for each file and sets parameters based on its field name
+    
+    // If the file is a video
+    if (file.fieldname === 'videos') {
+      return {
+     
+        resource_type: 'video', // This is crucial for Cloudinary
+        allowed_formats: ['mp4', 'mov', 'webm', 'avi'],
+      };
+    } 
+    // Otherwise, treat it as an image
+    else {
+      return {
+       
+        allowed_formats: ['jpg', 'jpeg', 'png', 'webp'],
+        transformation: [{ width: 800, height: 800, crop: 'limit' }],
+      };
+    }
   },
 });
 
 const upload = multer({ storage: storage });
 
-// Upload multiple images (main image + 3 additional images)
-const uploadImages = upload.fields([
+// Update upload middleware to accept both images AND videos
+const handleFileUploads = upload.fields([
   { name: 'mainImage', maxCount: 1 },
   { name: 'image1', maxCount: 1 },
   { name: 'image2', maxCount: 1 },
-  { name: 'image3', maxCount: 1 }
+  { name: 'image3', maxCount: 1 },
+  { name: 'videos', maxCount: 5 } // Add this line to accept video files
 ]);
 
-// Middleware to handle multer upload
-const handleUpload = (req, res, next) => {
-  uploadImages(req, res, function(err) {
-    if (err instanceof multer.MulterError) {
-      return res.status(400).json({ error: 'File upload error', details: err.message });
-    } else if (err) {
-      return res.status(500).json({ error: 'File upload error', details: err.message });
-    }
-    next();
-  });
-};
+// --- 👆 END OF MODIFIED SECTION ---
 
 // Get all products
 router.get("/", getAllProducts);
@@ -61,11 +69,11 @@ router.get("/section/:section", getProductsBySection);
 // Get single product
 router.get("/:id", getProduct);
 
-// Upload images and create product
-router.post("/upload", handleUpload, createProductWithFiles);
+// Create product with file uploads (changed from /upload to /)
+router.post("/", handleFileUploads, createProductWithFiles);
 
-// Update product by id
-router.put("/:id", handleUpload, updateProductWithFiles);
+// Update product by id with file uploads
+router.put("/:id", handleFileUploads, updateProductWithFiles);
 
 // Update product sections
 router.patch("/:id/sections", updateProductSections);
@@ -74,4 +82,3 @@ router.patch("/:id/sections", updateProductSections);
 router.delete("/:id", deleteProduct);
 
 module.exports = router;
- 

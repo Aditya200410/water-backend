@@ -160,7 +160,7 @@ const createProductWithFiles = async (req, res) => {
       weekendadvance:productData.weekendadvance,
       utility: productData.utility,
       care: productData.care,
-      advanaceprice: parseFloat(productData.advanceprice),
+      advanceprice: parseFloat(productData.advanceprice),
       terms: productData.terms,
       price: parseFloat(productData.price),
       regularprice: parseFloat(productData.regularprice),
