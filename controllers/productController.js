@@ -128,6 +128,13 @@ const createProductWithFiles = async (req, res) => {
       }
     }
 
+
+    // 👇 Process uploaded videos
+    const videoPaths = files.videos ? files.videos.map(video => video.path) : [];
+    console.log('Added videos:', videoPaths);
+
+
+
     console.log('Creating new product with data:', {
       name: productData.name,
       category: productData.category,
@@ -137,7 +144,8 @@ const createProductWithFiles = async (req, res) => {
       adultprice: productData.adultprice,
       childprice: productData.childprice,
       weekendprice: productData.weekendprice,
-            images: imagePaths
+            images: imagePaths,
+             videos: videoPaths,
     });
 
     const newProduct = new Product({
@@ -166,7 +174,8 @@ const createProductWithFiles = async (req, res) => {
       isFeatured: productData.isFeatured === 'true' || productData.isFeatured === true,
       isMostLoved: productData.isMostLoved === 'true' || productData.isMostLoved === true,
       codAvailable: productData.codAvailable === 'false' ? false : true,
-      stock: typeof productData.stock !== 'undefined' ? Number(productData.stock) : 10
+      stock: typeof productData.stock !== 'undefined' ? Number(productData.stock) : 10,
+       videos: videoPaths,
     });
     
     console.log('Saving product to database...');
@@ -238,6 +247,15 @@ const updateProductWithFiles = async (req, res) => {
     if (imagePaths.length === 0 && existingProduct.image) {
       imagePaths.push(existingProduct.image);
     }
+    // 👇 Handle video updates
+    // Start with existing videos and add any new ones.
+    let videoPaths = existingProduct.videos || [];
+    if (files.videos && files.videos.length > 0) {
+        const newVideoUrls = files.videos.map(video => video.path);
+        videoPaths = videoPaths.concat(newVideoUrls); // Appends new videos to the existing list
+        console.log('Updated video paths:', videoPaths);
+    }
+
 
     // Update product object
     const updatedProduct = {
@@ -261,6 +279,7 @@ const updateProductWithFiles = async (req, res) => {
       weekendprice: productData.weekendprice ? parseFloat(productData.weekendprice) : existingProduct.weekendprice,
       image: imagePaths[0],
       images: imagePaths,
+      videos: videoPaths,
       inStock: productData.inStock !== undefined ? (productData.inStock === 'true' || productData.inStock === true) : existingProduct.inStock,
       isBestSeller: productData.isBestSeller !== undefined ? (productData.isBestSeller === 'true' || productData.isBestSeller === true) : existingProduct.isBestSeller,
       isFeatured: productData.isFeatured !== undefined ? (productData.isFeatured === 'true' || productData.isFeatured === true) : existingProduct.isFeatured,

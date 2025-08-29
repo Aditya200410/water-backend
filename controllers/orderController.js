@@ -125,7 +125,11 @@ const createOrder = async (req, res) => {
       id: savedOrder._id.toString(),
       customerName: savedOrder.customerName,
       customerPhone: savedOrder.phone,
-      totalAmount: savedOrder.totalAmount
+      totalAmount: savedOrder.totalAmount,
+      adultquantity:savedOrder.adultquantity,
+      childquantity:savedOrder.childquantity,
+      totalAmount:savedOrder.totalAmount,
+      left:(savedOrder.totalAmount)-(savedOrder.advanaceprice)
     });
     // Calculate commission if seller token is provided
     let commission = 0;

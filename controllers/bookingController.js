@@ -4,7 +4,7 @@ const User = require("../models/User");
 const nodemailer = require("nodemailer");
 const crypto = require("crypto");
 const Razorpay = require("razorpay");
-
+const { sendWhatsAppMessage } = require("../service/whatsappService")
 // ----------------------------
 // Razorpay Initialization
 // ----------------------------
@@ -151,6 +151,19 @@ exports.createBooking = async (req, res) => {
       bookingDate: new Date(),
     };
 
+     
+    await sendWhatsAppMessage({
+      id: bookingData.waterpark.toString(),
+      waterparkName:bookingData.waterparkName,
+      customerName: bookingData.name,
+      customerPhone: bookingData.phone,
+      date:bookingData.date,
+      totalAmount: bookingData.totalAmount,
+      adultquantity:bookingData.adults,
+      childquantity:bookingData.children,
+      totalAmount:bookingData.totalAmount,
+      left:(bookingData.totalAmount)-(bookingData.advanceAmount)
+    });
     if (req.user?.userId) {
       console.log("[createBooking] Associating booking with user:", req.user.userId);
       bookingData.user = req.user.userId;
@@ -179,6 +192,9 @@ exports.createBooking = async (req, res) => {
       notes: { bookingId: booking._id.toString(), waterparkName, customerName: name, customerEmail: email, customerPhone: phone },
     };
 
+
+
+  
     console.log("[createBooking] Creating Razorpay order with options:", orderOptions);
     const order = await razorpay.orders.create(orderOptions);
     console.log("[createBooking] Razorpay order created:", order.id);

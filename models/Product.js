@@ -28,7 +28,8 @@ const productSchema = new mongoose.Schema({
   rating: { type: Number, default: 0 },
   reviews: { type: Number, default: 0 },
   codAvailable: { type: Boolean, default: true },
-  date: { type: Date, default: Date.now }
+  date: { type: Date, default: Date.now },
+ videos: [{ type: String }],
 });
 
 
