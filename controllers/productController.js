@@ -128,25 +128,9 @@ const createProductWithFiles = async (req, res) => {
       }
     }
 
-
     // 👇 Process uploaded videos
     const videoPaths = files.videos ? files.videos.map(video => video.path) : [];
     console.log('Added videos:', videoPaths);
-
-
-
-    console.log('Creating new product with data:', {
-      name: productData.name,
-      category: productData.category,
-      price: productData.price,
-      sd:productData.sd,
-       weekendadvance:productData.weekendadvance,
-      adultprice: productData.adultprice,
-      childprice: productData.childprice,
-      weekendprice: productData.weekendprice,
-            images: imagePaths,
-             videos: videoPaths,
-    });
 
     const newProduct = new Product({
       name: productData.name,
@@ -164,9 +148,11 @@ const createProductWithFiles = async (req, res) => {
       terms: productData.terms,
       price: parseFloat(productData.price),
       regularprice: parseFloat(productData.regularprice),
-           adultprice: parseFloat(productData.adultprice),
+            adultprice: parseFloat(productData.adultprice),
                 childprice: parseFloat(productData.childprice),
       weekendprice: productData.weekendprice ? parseFloat(productData.weekendprice) : undefined,
+      maplink: productData.maplink, // <-- ADDED
+      waterparknumber: productData.waterparknumber, // <-- ADDED
       image: imagePaths[0], // Main image Cloudinary URL
       images: imagePaths, // All Cloudinary URLs
       inStock: productData.inStock === 'true' || productData.inStock === true,
@@ -175,7 +161,7 @@ const createProductWithFiles = async (req, res) => {
       isMostLoved: productData.isMostLoved === 'true' || productData.isMostLoved === true,
       codAvailable: productData.codAvailable === 'false' ? false : true,
       stock: typeof productData.stock !== 'undefined' ? Number(productData.stock) : 10,
-       videos: videoPaths,
+        videos: videoPaths,
     });
     
     console.log('Saving product to database...');
@@ -277,6 +263,8 @@ const updateProductWithFiles = async (req, res) => {
     adultprice: productData.adultprice ? parseFloat(productData.adultprice) : existingProduct.adultprice,
       childprice: productData.childprice ? parseFloat(productData.childprice) : existingProduct,
       weekendprice: productData.weekendprice ? parseFloat(productData.weekendprice) : existingProduct.weekendprice,
+      maplink: productData.maplink || existingProduct.maplink, // <-- ADDED
+      waterparknumber: productData.waterparknumber || existingProduct.waterparknumber, // <-- ADDED
       image: imagePaths[0],
       images: imagePaths,
       videos: videoPaths,
@@ -386,4 +374,4 @@ module.exports = {
   updateProductWithFiles,
   updateProductSections,
   deleteProduct
-}; 
+};
