@@ -255,7 +255,7 @@ exports.verifyPayment = async (req, res) => {
     await booking.save();
     console.log("[verifyPayment] Booking updated with payment success:", booking._id);
 
-    const frontendUrl = `https://localhost:5173/ticket?bookingId=${booking._id}`;
+    const frontendUrl = `https://waterparkchalo.com/ticket?bookingId=${booking._id}`;
     console.log("[verifyPayment] Ticket URL:", frontendUrl);
 
     await sendEmail(
