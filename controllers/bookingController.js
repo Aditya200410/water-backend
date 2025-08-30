@@ -4,7 +4,8 @@ const User = require("../models/User");
 const nodemailer = require("nodemailer");
 const crypto = require("crypto");
 const Razorpay = require("razorpay");
-const { sendWhatsAppMessage } = require("../service/whatsappService")
+const { sendWhatsAppMessage } = require("../service/whatsappService");
+
 // ----------------------------
 // Razorpay Initialization
 // ----------------------------
@@ -91,7 +92,6 @@ exports.createBooking = async (req, res) => {
       adults,
       children,
       advanceAmount,
-   
       paymentType,
       waterparkName,
       total,
@@ -102,44 +102,50 @@ exports.createBooking = async (req, res) => {
     if (!waterpark) missing.push("waterpark");
     if (!name) missing.push("name");
     if (!email) missing.push("email");
-    if (!phone) missing.push("phone");
+    if (!phone) missing.push("phone"); // Phone is already being validated
     if (!date) missing.push("date");
-    if (advanceAmount === undefined || advanceAmount === null) missing.push("advanceAmount");
-  
+    if (advanceAmount === undefined || advanceAmount === null)
+      missing.push("advanceAmount");
     if (!paymentType) missing.push("paymentType");
     if (!waterparkName) missing.push("waterparkName");
     if (total === undefined || total === null) missing.push("total");
 
     if (missing.length) {
       console.warn("[createBooking] Missing required fields:", missing);
-      return res.status(400).json({ success: false, message: "Missing required fields", missing });
+      return res
+        .status(400)
+        .json({
+          success: false,
+          message: "Missing required fields",
+          missing,
+        });
     }
 
     const bookingDateObj = safeDate(date);
     if (!bookingDateObj) {
       console.warn("[createBooking] Invalid date format:", date);
-      return res.status(400).json({ success: false, message: "Invalid date format" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid date format" });
     }
 
     const advancePaise = toIntPaise(advanceAmount);
     const totalAmount = Number(total);
-
-         const calculatedLeftAmount = totalAmount - Number(advanceAmount);
-
+    const calculatedLeftAmount = totalAmount - Number(advanceAmount);
 
     if (advancePaise === null || !Number.isFinite(totalAmount)) {
       console.warn("[createBooking] Invalid amounts:", { advanceAmount, total });
-      return res.status(400).json({ success: false, message: "Invalid amounts" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid amounts" });
     }
- 
-
 
     const bookingData = {
       waterpark,
       waterparkName,
       name,
       email,
-      phone,
+      phone, // Phone is saved in booking data
       date: bookingDateObj,
       adults: Number(adults) || 0,
       children: Number(children) || 0,
@@ -151,21 +157,11 @@ exports.createBooking = async (req, res) => {
       bookingDate: new Date(),
     };
 
-     
-    await sendWhatsAppMessage({
-      id: bookingData.waterpark.toString(),
-      waterparkName:bookingData.waterparkName,
-      customerName: bookingData.name,
-      customerPhone: bookingData.phone,
-      date:bookingData.date,
-      totalAmount: bookingData.totalAmount,
-      adultquantity:bookingData.adults,
-      childquantity:bookingData.children,
-      totalAmount:bookingData.totalAmount,
-      left:(bookingData.totalAmount)-(bookingData.advanceAmount)
-    });
     if (req.user?.userId) {
-      console.log("[createBooking] Associating booking with user:", req.user.userId);
+      console.log(
+        "[createBooking] Associating booking with user:",
+        req.user.userId
+      );
       bookingData.user = req.user.userId;
     }
 
@@ -174,14 +170,38 @@ exports.createBooking = async (req, res) => {
     await booking.save();
     console.log("[createBooking] Booking saved:", booking._id);
 
+    // ✅ MODIFICATION: Only send WhatsApp for cash bookings immediately.
+    // For online payments, we'll send it after verification.
     if (paymentType === "cash") {
-      console.log("[createBooking] Cash payment flow, returning booking directly.");
-      return res.status(201).json({ success: true, message: "Booking created successfully", booking });
+      console.log(
+        "[createBooking] Cash payment flow, sending WhatsApp notification."
+      );
+      await sendWhatsAppMessage({
+        id: booking.waterpark.toString(),
+        waterparkName: booking.waterparkName,
+        customerName: booking.name,
+        customerPhone: booking.phone, // Using the phone number
+        date: booking.date,
+        adultquantity: booking.adults,
+        childquantity: booking.children,
+        totalAmount: booking.totalAmount,
+        left: booking.leftamount,
+      });
+
+      return res
+        .status(201)
+        .json({ success: true, message: "Booking created successfully", booking });
     }
 
     if (!razorpay) {
       console.error("[createBooking] Razorpay not configured.");
-      return res.status(500).json({ success: false, message: "Payment gateway not configured", booking });
+      return res
+        .status(500)
+        .json({
+          success: false,
+          message: "Payment gateway not configured",
+          booking,
+        });
     }
 
     const orderOptions = {
@@ -189,13 +209,19 @@ exports.createBooking = async (req, res) => {
       currency: "INR",
       receipt: booking._id.toString(),
       payment_capture: 1,
-      notes: { bookingId: booking._id.toString(), waterparkName, customerName: name, customerEmail: email, customerPhone: phone },
+      notes: {
+        bookingId: booking._id.toString(),
+        waterparkName,
+        customerName: name,
+        customerEmail: email,
+        customerPhone: phone,
+      },
     };
 
-
-
-  
-    console.log("[createBooking] Creating Razorpay order with options:", orderOptions);
+    console.log(
+      "[createBooking] Creating Razorpay order with options:",
+      orderOptions
+    );
     const order = await razorpay.orders.create(orderOptions);
     console.log("[createBooking] Razorpay order created:", order.id);
 
@@ -213,7 +239,13 @@ exports.createBooking = async (req, res) => {
     });
   } catch (error) {
     console.error("[createBooking] Error:", error);
-    return res.status(500).json({ success: false, message: "Error creating booking.", error: error.message });
+    return res
+      .status(500)
+      .json({
+        success: false,
+        message: "Error creating booking.",
+        error: error.message,
+      });
   }
 };
 
@@ -224,11 +256,24 @@ exports.verifyPayment = async (req, res) => {
   console.log("[verifyPayment] Request body:", req.body);
 
   try {
-    const { razorpay_order_id, razorpay_payment_id, razorpay_signature, bookingId, redirect } = req.body;
+    const {
+      razorpay_order_id,
+      razorpay_payment_id,
+      razorpay_signature,
+      bookingId,
+      redirect,
+    } = req.body;
 
-    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature || !bookingId) {
+    if (
+      !razorpay_order_id ||
+      !razorpay_payment_id ||
+      !razorpay_signature ||
+      !bookingId
+    ) {
       console.warn("[verifyPayment] Missing required fields.");
-      return res.status(400).json({ success: false, message: "Missing required fields" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Missing required fields" });
     }
 
     console.log("[verifyPayment] Generating signature for verification...");
@@ -240,122 +285,173 @@ exports.verifyPayment = async (req, res) => {
     console.log("[verifyPayment] Generated Signature:", generatedSignature);
     if (generatedSignature !== razorpay_signature) {
       console.warn("[verifyPayment] Signature mismatch.");
-      return res.status(400).json({ success: false, message: "Invalid payment signature." });
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid payment signature." });
     }
 
     const booking = await Booking.findById(bookingId);
     if (!booking) {
       console.warn("[verifyPayment] Booking not found:", bookingId);
-      return res.status(404).json({ success: false, message: "Booking not found." });
+      return res
+        .status(404)
+        .json({ success: false, message: "Booking not found." });
     }
 
     booking.paymentStatus = "Completed";
     booking.paymentType = "Razorpay";
     booking.paymentId = razorpay_payment_id;
     await booking.save();
-    console.log("[verifyPayment] Booking updated with payment success:", booking._id);
+    console.log(
+      "[verifyPayment] Booking updated with payment success:",
+      booking._id
+    );
+
+    // ✅ NEW: Send WhatsApp message AFTER successful payment verification
+    console.log(
+      "[verifyPayment] Sending WhatsApp confirmation to:",
+      booking.phone
+    );
+    await sendWhatsAppMessage({
+      id: booking.waterpark.toString(),
+      waterparkName: booking.waterparkName,
+      customerName: booking.name,
+      customerPhone: booking.phone, // Using the phone number from the booking
+      date: booking.date,
+      adultquantity: booking.adults,
+      childquantity: booking.children,
+      totalAmount: booking.totalAmount,
+      left: booking.leftamount,
+    });
+    console.log("[verifyPayment] WhatsApp confirmation sent.");
 
     const frontendUrl = `https://waterparkchalo.com/ticket?bookingId=${booking._id}`;
     console.log("[verifyPayment] Ticket URL:", frontendUrl);
 
     await sendEmail(
-  [booking.email, "am542062@gmail.com"],
-  `Payment Confirmation for ${booking.waterparkName}`,
-  `
-  <html>
-    <body style="font-family: Arial, sans-serif; background:#f9fafb; padding:20px; color:#333;">
-      <div style="max-width:600px; margin:0 auto; background:white; border-radius:10px; padding:20px; border:1px solid #ddd;">
-        
-        <!-- Header -->
-        <div style="text-align:center; margin-bottom:20px;">
-          <h2 style="color:#1d4ed8; font-size:28px; margin:0;">${booking.waterparkName}</h2>
-          <p style="color:#555; font-style:italic;">"Splash • Chill • Fun"</p>
-        </div>
+      [booking.email, "am542062@gmail.com"],
+      `Payment Confirmation for ${booking.waterparkName}`,
+      `
+      <html>
+        <body style="font-family: Arial, sans-serif; background:#f9fafb; padding:20px; color:#333;">
+          <div style="max-width:600px; margin:0 auto; background:white; border-radius:10px; padding:20px; border:1px solid #ddd;">
+            
+            <div style="text-align:center; margin-bottom:20px;">
+              <h2 style="color:#1d4ed8; font-size:28px; margin:0;">${
+                booking.waterparkName
+              }</h2>
+              <p style="color:#555; font-style:italic;">"Splash • Chill • Fun"</p>
+            </div>
+    
+            <table width="100%" style="border-top:1px dashed #60a5fa; padding-top:15px; font-size:14px;">
+              <tr>
+                <td>
+                  <p style="margin:0; color:#666; font-size:12px;">Booking ID</p>
+                  <p style="margin:0; font-family:monospace; color:#1d4ed8;">#${
+                    booking._id
+                  }</p>
+                </td>
+                <td style="text-align:right;">
+                  <p style="margin:0; color:#666; font-size:12px;">Visit Date</p>
+                  <p style="margin:0; font-weight:bold; color:#111;">
+                    ${new Date(booking.date).toLocaleDateString()}
+                  </p>
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <p style="margin:0; color:#666; font-size:12px;">Name</p>
+                  <p style="margin:0; font-weight:600; color:#111;">${
+                    booking.name
+                  }</p>
+                </td>
+                <td style="text-align:right;">
+                  <p style="margin:0; color:#666; font-size:12px;">Phone</p>
+                  <p style="margin:0; font-weight:600; color:#111;">${
+                    booking.phone
+                  }</p>
+                </td>
+              </tr>
+            </table>
+    
+            <hr style="border:0; border-top:2px dotted #60a5fa; margin:20px 0;">
+    
+            <table width="100%" style="font-size:14px;">
+              <tr>
+                <td>
+                  <p style="margin:0; color:#666; font-size:12px;">Adults</p>
+                  <p style="margin:0; font-weight:bold; color:#1d4ed8;">${
+                    booking.adults
+                  }</p>
+                </td>
+                <td style="text-align:right;">
+                  <p style="margin:0; color:#666; font-size:12px;">Children</p>
+                  <p style="margin:0; font-weight:bold; color:#db2777;">${
+                    booking.children
+                  }</p>
+                </td>
+              </tr>
+            </table>
+    
+            <table width="100%" style="border-top:1px dashed #60a5fa; padding-top:15px; font-size:14px; margin-top:15px;">
+              <tr>
+                <td>
+                  <p style="margin:0; color:#666; font-size:12px;">Advance Paid</p>
+                  <p style="margin:0; font-weight:600; color:#16a34a;">₹${
+                    booking.advanceAmount
+                  }</p>
+                </td>
+                <td style="text-align:right;">
+                  <p style="margin:0; color:#666; font-size:12px;">Total Amount</p>
+                  <p style="margin:0; font-size:20px; font-weight:800; color:#be185d;">₹${
+                    booking.totalAmount
+                  }</p>
+                </td>
+                  <td style="text-align:right;">
+                  <p style="margin:0; color:#666; font-size:12px;">Left Amount</p>
+                  <p style="margin:0; font-size:20px; font-weight:800; color:#be185d;">₹${
+                    booking.leftamount
+                  }</p>
+                </td>
+              </tr>
+            </table>
+    
+            <div style="text-align:center; margin-top:30px; font-size:13px; color:#666;">
+              <p>Thank you for booking with <strong>${
+                booking.waterparkName
+              }</strong>!</p>
+              <p>We look forward to your visit.</p>
+            </div>
+          </div>
+        </body>
+      </html>
+      `
+    );
 
-        <!-- Booking Info -->
-        <table width="100%" style="border-top:1px dashed #60a5fa; padding-top:15px; font-size:14px;">
-          <tr>
-            <td>
-              <p style="margin:0; color:#666; font-size:12px;">Booking ID</p>
-              <p style="margin:0; font-family:monospace; color:#1d4ed8;">#${booking._id}</p>
-            </td>
-            <td style="text-align:right;">
-              <p style="margin:0; color:#666; font-size:12px;">Visit Date</p>
-              <p style="margin:0; font-weight:bold; color:#111;">
-                ${new Date(booking.date).toLocaleDateString()}
-              </p>
-            </td>
-          </tr>
-          <tr>
-            <td>
-              <p style="margin:0; color:#666; font-size:12px;">Name</p>
-              <p style="margin:0; font-weight:600; color:#111;">${booking.name}</p>
-            </td>
-            <td style="text-align:right;">
-              <p style="margin:0; color:#666; font-size:12px;">Phone</p>
-              <p style="margin:0; font-weight:600; color:#111;">${booking.phone}</p>
-            </td>
-          </tr>
-        </table>
+    console.log("[verifyPayment] Confirmation email sent.");
 
-        <!-- Divider -->
-        <hr style="border:0; border-top:2px dotted #60a5fa; margin:20px 0;">
-
-        <!-- Guests Info -->
-        <table width="100%" style="font-size:14px;">
-          <tr>
-            <td>
-              <p style="margin:0; color:#666; font-size:12px;">Adults</p>
-              <p style="margin:0; font-weight:bold; color:#1d4ed8;">${booking.adults}</p>
-            </td>
-            <td style="text-align:right;">
-              <p style="margin:0; color:#666; font-size:12px;">Children</p>
-              <p style="margin:0; font-weight:bold; color:#db2777;">${booking.children}</p>
-            </td>
-          </tr>
-        </table>
-
-        <!-- Payment Info -->
-        <table width="100%" style="border-top:1px dashed #60a5fa; padding-top:15px; font-size:14px; margin-top:15px;">
-          <tr>
-            <td>
-              <p style="margin:0; color:#666; font-size:12px;">Advance Paid</p>
-              <p style="margin:0; font-weight:600; color:#16a34a;">₹${booking.advanceAmount}</p>
-            </td>
-            <td style="text-align:right;">
-              <p style="margin:0; color:#666; font-size:12px;">Total Amount</p>
-              <p style="margin:0; font-size:20px; font-weight:800; color:#be185d;">₹${booking.totalAmount}</p>
-            </td>
-             <td style="text-align:right;">
-              <p style="margin:0; color:#666; font-size:12px;">Left Amount</p>
-              <p style="margin:0; font-size:20px; font-weight:800; color:#be185d;">₹${booking.leftamount}</p>
-            </td>
-          </tr>
-        </table>
-
-        <!-- Footer -->
-        <div style="text-align:center; margin-top:30px; font-size:13px; color:#666;">
-          <p>Thank you for booking with <strong>${booking.waterparkName}</strong>!</p>
-          <p>We look forward to your visit.</p>
-        </div>
-      </div>
-    </body>
-  </html>
-  `
-);
-
-console.log("[verifyPayment] Confirmation email sent.");
-
-    const shouldRedirect = typeof redirect === "string" ? redirect.toLowerCase() === "true" : Boolean(redirect);
+    const shouldRedirect =
+      typeof redirect === "string"
+        ? redirect.toLowerCase() === "true"
+        : Boolean(redirect);
     if (shouldRedirect) {
       console.log("[verifyPayment] Redirecting to frontend URL.");
       return res.redirect(frontendUrl);
     }
 
-    return res.status(200).json({ success: true, message: "Payment verified successfully", booking, frontendUrl });
+    return res
+      .status(200)
+      .json({
+        success: true,
+        message: "Payment verified successfully",
+        booking,
+        frontendUrl,
+      });
   } catch (error) {
     console.error("[verifyPayment] Error:", error);
-    return res.status(500).json({ success: false, message: "Error verifying payment." });
+    return res
+      .status(500)
+      .json({ success: false, message: "Error verifying payment." });
   }
 };
 
@@ -370,37 +466,48 @@ exports.getSingleBooking = async (req, res) => {
     const booking = await Booking.findById(id);
     if (!booking) {
       console.warn("[getSingleBooking] Booking not found:", id);
-      return res.status(404).json({ success: false, message: "Booking not found." });
+      return res
+        .status(404)
+        .json({ success: false, message: "Booking not found." });
     }
     console.log("[getSingleBooking] Booking found:", booking._id);
     return res.status(200).json({ success: true, booking });
   } catch (error) {
     console.error("[getSingleBooking] Error:", error);
-    return res.status(500).json({ success: false, message: "Error fetching booking." });
+    return res
+      .status(500)
+      .json({ success: false, message: "Error fetching booking." });
   }
 };
 
-
-//get booking by email 
+//get booking by email
 // Get all orders for a specific user by email
 exports.getOrdersByEmail = async (req, res) => {
   try {
     const userEmail = req.query.email;
     if (!userEmail) {
-      return res.status(400).json({ success: false, message: 'Email query parameter is required.' });
+      return res
+        .status(400)
+        .json({ success: false, message: "Email query parameter is required." });
     }
 
     // Case-insensitive search for email in Booking collection
-    const orders = await Booking.find({ email: { $regex: new RegExp(`^${userEmail}$`, 'i') } })
-      .sort({ bookingDate: -1 });
+    const orders = await Booking.find({
+      email: { $regex: new RegExp(`^${userEmail}$`, "i") },
+    }).sort({ bookingDate: -1 });
 
     res.status(200).json({ success: true, orders });
   } catch (error) {
-    console.error('Error fetching orders:', error);
-    res.status(500).json({ success: false, message: 'Failed to fetch orders.', error: error.message });
+    console.error("Error fetching orders:", error);
+    res
+      .status(500)
+      .json({
+        success: false,
+        message: "Failed to fetch orders.",
+        error: error.message,
+      });
   }
 };
-
 
 // ----------------------------
 // Get All Bookings
@@ -421,7 +528,12 @@ exports.getAllBookings = async (req, res) => {
 // Get User Bookings
 // ----------------------------
 exports.getUserBookings = async (req, res) => {
-  console.log("[getUserBookings] Request user:", req.user, "Request body:", req.body);
+  console.log(
+    "[getUserBookings] Request user:",
+    req.user,
+    "Request body:",
+    req.body
+  );
 
   try {
     let query = {};
@@ -432,7 +544,9 @@ exports.getUserBookings = async (req, res) => {
       const user = await User.findById(req.user.userId).select("email role");
       if (!user) {
         console.warn("[getUserBookings] User not found:", req.user.userId);
-        return res.status(404).json({ success: false, message: "User not found." });
+        return res
+          .status(404)
+          .json({ success: false, message: "User not found." });
       }
       query = { email: user.email };
       role = user.role || "user";
@@ -441,7 +555,9 @@ exports.getUserBookings = async (req, res) => {
       role = "guest";
     } else {
       console.warn("[getUserBookings] No email or auth provided.");
-      return res.status(400).json({ success: false, message: "Provide email or authenticate." });
+      return res
+        .status(400)
+        .json({ success: false, message: "Provide email or authenticate." });
     }
 
     console.log("[getUserBookings] Querying bookings with:", query);
@@ -449,7 +565,9 @@ exports.getUserBookings = async (req, res) => {
     console.log("[getUserBookings] Bookings found:", bookings.length);
 
     if (!bookings.length) {
-      return res.status(200).json({ success: false, message: "No bookings found.", role });
+      return res
+        .status(200)
+        .json({ success: false, message: "No bookings found.", role });
     }
 
     return res.status(200).json({ success: true, role, bookings });
@@ -474,7 +592,9 @@ exports.testRazorpayConfig = async (req, res) => {
 
     if (!razorpay) {
       console.warn("[testRazorpayConfig] Razorpay not configured.");
-      return res.status(500).json({ success: false, message: "Razorpay not configured", config });
+      return res
+        .status(500)
+        .json({ success: false, message: "Razorpay not configured", config });
     }
 
     const testOrder = await razorpay.orders.create({
@@ -484,9 +604,22 @@ exports.testRazorpayConfig = async (req, res) => {
     });
 
     console.log("[testRazorpayConfig] Test order created:", testOrder.id);
-    return res.status(200).json({ success: true, message: "Razorpay configured", config, test_order: testOrder.id });
+    return res
+      .status(200)
+      .json({
+        success: true,
+        message: "Razorpay configured",
+        config,
+        test_order: testOrder.id,
+      });
   } catch (error) {
     console.error("[testRazorpayConfig] Error:", error);
-    return res.status(500).json({ success: false, message: "Razorpay test failed", error: error.message });
+    return res
+      .status(500)
+      .json({
+        success: false,
+        message: "Razorpay test failed",
+        error: error.message,
+      });
   }
 };
