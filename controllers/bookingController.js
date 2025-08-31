@@ -320,23 +320,7 @@ exports.verifyPayment = async (req, res) => {
       booking._id
     );
 
-    // ✅ NEW: Send WhatsApp message AFTER successful payment verification
-    console.log(
-      "[verifyPayment] Sending WhatsApp confirmation to:",
-      booking.phone
-    );
-    await sendWhatsAppMessage({
-      id: booking.waterpark.toString(),
-      waterparkName: waterparkname,
-      customerName: customerName,
-      customerPhone: customerPhone, // Using the phone number from the booking
-      date: formattedDate,
-      adultquantity: adultqunatity,
-      childquantity: childquantity,
-      totalAmount: totalamount,
-      left: left,
-    });
-    console.log("[verifyPayment] WhatsApp confirmation sent.");
+    
 
     const frontendUrl = `https://waterparkchalo.com/ticket?bookingId=${booking._id}`;
     console.log("[verifyPayment] Ticket URL:", frontendUrl);
@@ -442,7 +426,23 @@ exports.verifyPayment = async (req, res) => {
     );
 
     console.log("[verifyPayment] Confirmation email sent.");
-
+// ✅ NEW: Send WhatsApp message AFTER successful payment verification
+    console.log(
+      "[verifyPayment] Sending WhatsApp confirmation to:",
+      booking.phone
+    );
+    await sendWhatsAppMessage({
+      id: booking.waterpark.toString(),
+      waterparkName: waterparkname,
+      customerName: customerName,
+      customerPhone: customerPhone, // Using the phone number from the booking
+      date: formattedDate,
+      adultquantity: adultqunatity,
+      childquantity: childquantity,
+      totalAmount: totalamount,
+      left: left,
+    });
+    console.log("[verifyPayment] WhatsApp confirmation sent.");
     const shouldRedirect =
       typeof redirect === "string"
         ? redirect.toLowerCase() === "true"
