@@ -5,6 +5,8 @@ const nodemailer = require("nodemailer");
 const crypto = require("crypto");
 const Razorpay = require("razorpay");
 const { sendWhatsAppMessage } = require("../service/whatsappService");
+const {selfWhatsAppMessage }= require("../service/whatsappself");
+const {parkWhatsAppMessage }= require("../service/whatsapppark")
 
 // ----------------------------
 // Razorpay Initialization
@@ -85,6 +87,7 @@ exports.createBooking = async (req, res) => {
   try {
     const {
       waterpark,
+        waterparknumber,
       name,
       email,
       phone,
@@ -144,6 +147,7 @@ exports.createBooking = async (req, res) => {
       waterpark,
       waterparkName,
       name,
+        waterparknumber,
       email,
       phone, // Phone is saved in booking data
       date: bookingDateObj,
@@ -327,6 +331,44 @@ exports.verifyPayment = async (req, res) => {
       left: booking.leftamount,
     });
     console.log("[verifyPayment] WhatsApp confirmation sent.");
+
+ console.log(
+      "[verifyPayment] Sending WhatsApp confirmation to:",
+      booking.phone
+    );
+    await selfWhatsAppMessage({
+      id: booking.waterpark.toString(),
+      waterparkName: booking.waterparkName,
+      customerName: booking.name,
+      customerPhone: booking.phone, // Using the phone number from the booking
+      date: booking.date,
+      adultquantity: booking.adults,
+      childquantity: booking.children,
+      totalAmount: booking.totalAmount,
+      left: booking.leftamount,
+    });
+    console.log("[verifyPayment] WhatsApp confirmation sent.");
+
+
+ console.log(
+      "[verifyPayment] Sending WhatsApp confirmation to:",
+      booking.phone
+    );
+    await parkWhatsAppMessage({
+      id: booking.waterpark.toString(),
+      waterparkName: booking.waterparkName,
+      customerName: booking.name,
+      waterparknumber :booking.waterparknumber,
+      customerPhone: booking.phone, // Using the phone number from the booking
+      date: booking.date,
+      adultquantity: booking.adults,
+      childquantity: booking.children,
+      totalAmount: booking.totalAmount,
+      left: booking.leftamount,
+    });
+    console.log("[verifyPayment] WhatsApp confirmation sent.");
+
+
 
     const frontendUrl = `https://waterparkchalo.com/ticket?bookingId=${booking._id}`;
     console.log("[verifyPayment] Ticket URL:", frontendUrl);
