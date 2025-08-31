@@ -70,7 +70,7 @@ router.get("/section/:section", getProductsBySection);
 router.get("/:id", getProduct);
 
 // Create product with file uploads (changed from /upload to /)
-router.post("/", handleFileUploads, createProductWithFiles);
+router.post("/upload", handleFileUploads, createProductWithFiles);
 
 // Update product by id with file uploads
 router.put("/:id", handleFileUploads, updateProductWithFiles);

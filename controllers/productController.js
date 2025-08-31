@@ -79,6 +79,7 @@ const createProductWithFiles = async (req, res) => {
     const requiredFields = [
       "name",
      "sd",
+     "faq",
       "description",
       
       "category",
@@ -139,6 +140,7 @@ const createProductWithFiles = async (req, res) => {
       size: productData.size,
       colour: productData.colour,
       sd:productData.sd,
+       faq:productData.faq,
       category: productData.category,
       weight: productData.weight,
       weekendadvance:productData.weekendadvance,
@@ -249,6 +251,7 @@ const updateProductWithFiles = async (req, res) => {
       material: productData.material || existingProduct.material,
       description: productData.description || existingProduct.description,
         sd:productData.sd || existingProduct.sd,
+           faq:productData.faq || existingProduct.faq,
       size: productData.size || existingProduct.size,
       colour: productData.colour || existingProduct.colour,
       category: productData.category || existingProduct.category,
