@@ -172,15 +172,15 @@ exports.createBooking = async (req, res) => {
 const formattedDate = booking.date
   ? new Date(booking.date).toLocaleDateString("en-IN")
   : "";
-  const id =  booking.waterpark.toString()
-  const waterparkname =    booking.waterparkName
-  const customerName =   booking.name
-  const customerPhone  =   booking.phone // Using the phone number from the booking
+  var id =  booking.waterpark.toString()
+  var waterparkname =    booking.waterparkName
+  var customerName =   booking.name
+  var customerPhone  =   booking.phone // Using the phone number from the booking
   
-  const  adultqunatity =     booking.adults
-  const childquantity  =   booking.children
-  const totalamount =     booking.totalAmount
-  const left =  booking.leftamount
+  var  adultqunatity =     booking.adults
+  var childquantity  =   booking.children
+  var totalamount =     booking.totalAmount
+  var left =  booking.leftamount
 
     // ✅ MODIFICATION: Only send WhatsApp for cash bookings immediately.
     // For online payments, we'll send it after verification.
