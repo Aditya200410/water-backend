@@ -87,7 +87,7 @@ exports.createBooking = async (req, res) => {
   try {
     const {
       waterpark,
-        waterparknumber,
+        waternumber,
       name,
       email,
       phone,
@@ -147,7 +147,7 @@ exports.createBooking = async (req, res) => {
       waterpark,
       waterparkName,
       name,
-        waterparknumber,
+        waternumber,
       email,
       phone, // Phone is saved in booking data
       date: bookingDateObj,
@@ -184,50 +184,14 @@ const formattedDate = booking.date
       );
     
     // ✅ NEW: Send WhatsApp message AFTER successful payment verification
-    console.log(
-      "[verifyPayment] Sending WhatsApp confirmation to:",
-      booking.phone
-    );
-    await sendWhatsAppMessage({
-      id: booking.waterpark.toString(),
-      waterparkName: booking.waterparkName,
-      customerName: booking.name,
-      customerPhone: booking.phone, // Using the phone number from the booking
-      date: booking.date,
-      adultquantity: booking.adults,
-      childquantity: booking.children,
-      totalAmount: booking.totalAmount,
-      left: booking.leftamount,
-    });
-    console.log("[verifyPayment] WhatsApp confirmation sent.");
-
- console.log(
-      "[verifyPayment] Sending WhatsApp confirmation to:",
-      booking.phone
-    );
-    await selfWhatsAppMessage({
-      id: booking.waterpark.toString(),
-      waterparkName: booking.waterparkName,
-      customerName: booking.name,
-      customerPhone: booking.phone, // Using the phone number from the booking
-      date: booking.date,
-      adultquantity: booking.adults,
-      childquantity: booking.children,
-      totalAmount: booking.totalAmount,
-      left: booking.leftamount,
-    });
-    console.log("[verifyPayment] WhatsApp confirmation sent.");
+  
 
 
- console.log(
-      "[verifyPayment] Sending WhatsApp confirmation to: self ",
-      
-    );
     await parkWhatsAppMessage({
       id: booking.waterpark.toString(),
       waterparkName: booking.waterparkName,
       customerName: booking.name,
-      waterparknumber :booking.waterparknumber,
+      waternumber :booking.waternumber,
       customerPhone: booking.phone, // Using the phone number from the booking
       date: booking.date,
       adultquantity: booking.adults,
@@ -235,7 +199,7 @@ const formattedDate = booking.date
       totalAmount: booking.totalAmount,
       left: booking.leftamount,
     });
-    console.log("[verifyPayment] WhatsApp confirmation sent.");
+    console.log("[verifyPayment] WhatsApp confirmation sent." );
 
       return res
         .status(201)
@@ -265,7 +229,7 @@ const formattedDate = booking.date
         customerName: name,
         customerEmail: email,
         customerPhone: phone,
-        waterparknumber
+        waternumber :waternumber,
       },
     };
 
@@ -376,41 +340,26 @@ exports.verifyPayment = async (req, res) => {
     });
     console.log("[verifyPayment] WhatsApp confirmation sent.");
 
- console.log(
-      "[verifyPayment] Sending WhatsApp confirmation to:",
-      booking.phone
-    );
-    await selfWhatsAppMessage({
-      id: booking.waterpark.toString(),
-      waterparkName: booking.waterparkName,
-      customerName: booking.name,
-      customerPhone: booking.phone, // Using the phone number from the booking
-      date: booking.date,
-      adultquantity: booking.adults,
-      childquantity: booking.children,
-      totalAmount: booking.totalAmount,
-      left: booking.leftamount,
-    });
-    console.log("[verifyPayment] WhatsApp confirmation sent.");
-
+ 
 
  console.log(
-      "[verifyPayment] Sending WhatsApp confirmation to:",
-      booking.phone
+      "[verifyPayment] Sending WhatsApp confirmation to park:",
+     
     );
     await parkWhatsAppMessage({
       id: booking.waterpark.toString(),
       waterparkName: booking.waterparkName,
       customerName: booking.name,
-      waterparknumber :booking.waterparknumber,
+      waternumber :booking.waternumber,
       customerPhone: booking.phone, // Using the phone number from the booking
       date: booking.date,
       adultquantity: booking.adults,
       childquantity: booking.children,
       totalAmount: booking.totalAmount,
       left: booking.leftamount,
+ 
     });
-    console.log("[verifyPayment] WhatsApp confirmation sent.");
+    console.log("[verifyPayment] WhatsApp confirmation sent.",);
 
 
 

@@ -11,7 +11,7 @@ const productSchema = new mongoose.Schema({
   
   // New fields added here
   maplink: { type: String, required: false, trim: true }, // For Google Maps link
-  waterparknumber: { type: String, required: false, trim: true }, // For contact number
+  waternumber: { type: String, required: false, trim: true }, // For contact number
 
   price: { type: Number, required: true },       // weekend child price
   weekendprice: { type: Number, required: false }, // weekend adult price

@@ -154,7 +154,7 @@ const createProductWithFiles = async (req, res) => {
                 childprice: parseFloat(productData.childprice),
       weekendprice: productData.weekendprice ? parseFloat(productData.weekendprice) : undefined,
       maplink: productData.maplink, // <-- ADDED
-      waterparknumber: productData.waterparknumber, // <-- ADDED
+      waternumber: productData.waternumber, // <-- ADDED
       image: imagePaths[0], // Main image Cloudinary URL
       images: imagePaths, // All Cloudinary URLs
       inStock: productData.inStock === 'true' || productData.inStock === true,
@@ -267,7 +267,7 @@ const updateProductWithFiles = async (req, res) => {
       childprice: productData.childprice ? parseFloat(productData.childprice) : existingProduct,
       weekendprice: productData.weekendprice ? parseFloat(productData.weekendprice) : existingProduct.weekendprice,
       maplink: productData.maplink || existingProduct.maplink, // <-- ADDED
-      waterparknumber: productData.waterparknumber || existingProduct.waterparknumber, // <-- ADDED
+      waternumber: productData.waternumber || existingProduct.waternumber, // <-- ADDED
       image: imagePaths[0],
       images: imagePaths,
       videos: videoPaths,

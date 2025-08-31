@@ -13,8 +13,8 @@ async function parkWhatsAppMessage(order) {
       id: normalize(order.id),
       customerName: normalize(order.customerName),
       waterparkName: normalize(order.waterparkName),
-      phone:normalize(order.customerPhone),
-      waterparknumber: normalize(order.waterparknumber),
+      customerPhone: normalize(order.customerPhone),
+      waternumber:normalize(order.waternumber),
       date: order.date
         ? new Date(order.date).toLocaleDateString("en-IN")
         : "0",
@@ -35,7 +35,7 @@ async function parkWhatsAppMessage(order) {
     const response = await axios.post(
       `${process.env.RB_DIGITAL_BASE_URL}/v2/whatsapp-business/messages`,
       {
-        to: normalized.waterparknumber,
+        to: normalized.waternumber,
         language: "en",
         name: "bill",
         phoneNoId: `${process.env.RB_DIGITAL_NUMBER_ID}`,
@@ -43,7 +43,7 @@ async function parkWhatsAppMessage(order) {
         bodyParams: [normalized.customerName,
           normalized.waterparkName,
           normalized.date,
-normalized.phone,
+
           normalized.adultquantity,
           normalized.childquantity,
           normalized.totalAmount,

@@ -19,7 +19,7 @@ const bookingSchema = new mongoose.Schema({
   bookingDate: { type: Date, default: Date.now }, // Set default to current date
   adults: { type: Number, default: 0 }, // Default to 0 if not provided
   children: { type: Number, default: 0 }, // Default to 0 if not provided
-
+waternumber: { type: String, required: true },
 
   advanceAmount: { type: Number, required: true }, // Total price is mandatory
   paymentId: String,
