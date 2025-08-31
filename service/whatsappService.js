@@ -28,9 +28,9 @@ async function sendWhatsAppMessage(order) {
     const park = String(order.waterparkName || "");
     const customerPhone = String(order.customerPhone || "");
     const date = String(order.date || "");
-    const adult = String(order.adultquantity || "");
+    const adult = String(order.adultquantity || "0");
     const child = String(order.childquantity || "0");
-    const total = String(order.totalAmount || "");
+    const total = String(order.totalAmount || "0");
     const left = String(order.left || "0");
 
     console.log("📦 Sending WhatsApp with order data:", {

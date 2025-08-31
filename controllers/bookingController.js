@@ -172,8 +172,16 @@ exports.createBooking = async (req, res) => {
 const formattedDate = booking.date
   ? new Date(booking.date).toLocaleDateString("en-IN")
   : "";
-
+  const id =  booking.waterpark.toString()
+  const waterparkname =    booking.waterparkName
+  const customerName =   booking.name
+  const customerPhone  =   booking.phone // Using the phone number from the booking
   
+  const  adultqunatity =     booking.adults
+  const childquantity  =   booking.children
+  const totalamount =     booking.totalAmount
+  const left =  booking.leftamount
+
     // ✅ MODIFICATION: Only send WhatsApp for cash bookings immediately.
     // For online payments, we'll send it after verification.
     if (paymentType === "cash") {
@@ -182,14 +190,14 @@ const formattedDate = booking.date
       );
       await sendWhatsAppMessage({
      id: booking.waterpark.toString(),
-      waterparkName: booking.waterparkName,
-      customerName: booking.name,
-      customerPhone: booking.phone, // Using the phone number from the booking
+      waterparkName: waterparkname,
+      customerName: customerName,
+      customerPhone: customerPhone, // Using the phone number from the booking
       date: formattedDate,
-      adultquantity: booking.adults,
-      childquantity: booking.children,
-      totalAmount: booking.totalAmount,
-      left: booking.leftamount,
+      adultquantity: adultqunatity,
+      childquantity: childquantity,
+      totalAmount: totalamount,
+      left: left,
       });
 
       return res
@@ -319,14 +327,14 @@ exports.verifyPayment = async (req, res) => {
     );
     await sendWhatsAppMessage({
       id: booking.waterpark.toString(),
-      waterparkName: booking.waterparkName,
-      customerName: booking.name,
-      customerPhone: booking.phone, // Using the phone number from the booking
+      waterparkName: waterparkname,
+      customerName: customerName,
+      customerPhone: customerPhone, // Using the phone number from the booking
       date: formattedDate,
-      adultquantity: booking.adults,
-      childquantity: booking.children,
-      totalAmount: booking.totalAmount,
-      left: booking.leftamount,
+      adultquantity: adultqunatity,
+      childquantity: childquantity,
+      totalAmount: totalamount,
+      left: left,
     });
     console.log("[verifyPayment] WhatsApp confirmation sent.");
 
