@@ -172,8 +172,6 @@ exports.createBooking = async (req, res) => {
 const formattedDate = booking.date
   ? new Date(booking.date).toLocaleDateString("en-IN")
   : "";
-
-  
     // ✅ MODIFICATION: Only send WhatsApp for cash bookings immediately.
     // For online payments, we'll send it after verification.
     if (paymentType === "cash") {
@@ -318,11 +316,11 @@ exports.verifyPayment = async (req, res) => {
       booking.phone
     );
     await sendWhatsAppMessage({
-   
+      id: booking.waterpark.toString(),
       waterparkName: booking.waterparkName,
       customerName: booking.name,
       customerPhone: booking.phone, // Using the phone number from the booking
-      date: formattedDate,
+      date: booking.date,
       adultquantity: booking.adults,
       childquantity: booking.children,
       totalAmount: booking.totalAmount,
