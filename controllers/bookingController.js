@@ -172,16 +172,8 @@ exports.createBooking = async (req, res) => {
 const formattedDate = booking.date
   ? new Date(booking.date).toLocaleDateString("en-IN")
   : "";
-  var id =  booking.waterpark.toString()
-  var waterparkname =    booking.waterparkName
-  var customerName =   booking.name
-  var customerPhone  =   booking.phone // Using the phone number from the booking
-  
-  var  adultqunatity =     booking.adults
-  var childquantity  =   booking.children
-  var totalamount =     booking.totalAmount
-  var left =  booking.leftamount
 
+  
     // ✅ MODIFICATION: Only send WhatsApp for cash bookings immediately.
     // For online payments, we'll send it after verification.
     if (paymentType === "cash") {
@@ -190,14 +182,14 @@ const formattedDate = booking.date
       );
       await sendWhatsAppMessage({
      id: booking.waterpark.toString(),
-      waterparkName: waterparkname,
-      customerName: customerName,
-      customerPhone: customerPhone, // Using the phone number from the booking
+      waterparkName: booking.waterparkName,
+      customerName: booking.name,
+      customerPhone: booking.phone, // Using the phone number from the booking
       date: formattedDate,
-      adultquantity: adultqunatity,
-      childquantity: childquantity,
-      totalAmount: totalamount,
-      left: left,
+      adultquantity: booking.adults,
+      childquantity: booking.children,
+      totalAmount: booking.totalAmount,
+      left: booking.leftamount,
       });
 
       return res
@@ -320,7 +312,23 @@ exports.verifyPayment = async (req, res) => {
       booking._id
     );
 
-    
+    // ✅ NEW: Send WhatsApp message AFTER successful payment verification
+    console.log(
+      "[verifyPayment] Sending WhatsApp confirmation to:",
+      booking.phone
+    );
+    await sendWhatsAppMessage({
+   
+      waterparkName: booking.waterparkName,
+      customerName: booking.name,
+      customerPhone: booking.phone, // Using the phone number from the booking
+      date: formattedDate,
+      adultquantity: booking.adults,
+      childquantity: booking.children,
+      totalAmount: booking.totalAmount,
+      left: booking.leftamount,
+    });
+    console.log("[verifyPayment] WhatsApp confirmation sent.");
 
     const frontendUrl = `https://waterparkchalo.com/ticket?bookingId=${booking._id}`;
     console.log("[verifyPayment] Ticket URL:", frontendUrl);
@@ -426,23 +434,7 @@ exports.verifyPayment = async (req, res) => {
     );
 
     console.log("[verifyPayment] Confirmation email sent.");
-// ✅ NEW: Send WhatsApp message AFTER successful payment verification
-    console.log(
-      "[verifyPayment] Sending WhatsApp confirmation to:",
-      booking.phone
-    );
-    await sendWhatsAppMessage({
-      id: booking.waterpark.toString(),
-      waterparkName: waterparkname,
-      customerName: customerName,
-      customerPhone: customerPhone, // Using the phone number from the booking
-      date: formattedDate,
-      adultquantity: adultqunatity,
-      childquantity: childquantity,
-      totalAmount: totalamount,
-      left: left,
-    });
-    console.log("[verifyPayment] WhatsApp confirmation sent.");
+
     const shouldRedirect =
       typeof redirect === "string"
         ? redirect.toLowerCase() === "true"
