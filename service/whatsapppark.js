@@ -13,6 +13,7 @@ async function parkWhatsAppMessage(order) {
       id: normalize(order.id),
       customerName: normalize(order.customerName),
       waterparkName: normalize(order.waterparkName),
+      phone:normalize(order.customerPhone),
       waterparknumber: normalize(order.waterparknumber),
       date: order.date
         ? new Date(order.date).toLocaleDateString("en-IN")
@@ -42,7 +43,7 @@ async function parkWhatsAppMessage(order) {
         bodyParams: [normalized.customerName,
           normalized.waterparkName,
           normalized.date,
-
+normalized.phone,
           normalized.adultquantity,
           normalized.childquantity,
           normalized.totalAmount,

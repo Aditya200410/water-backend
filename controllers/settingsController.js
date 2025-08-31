@@ -8,9 +8,7 @@ if (!Settings) {
 // Get all settings
 const getAllSettings = async (req, res) => {
   try {
-    console.log('Fetching all settings...');
     const settings = await Settings.find().sort({ key: 1 });
-    console.log('Settings found:', settings.length);
     res.status(200).json({ success: true, settings });
   } catch (error) {
     console.error('Error fetching settings:', error);
@@ -40,26 +38,24 @@ const upsertSetting = async (req, res) => {
   try {
     const { key, value, description } = req.body;
     
-    console.log('Upserting setting:', { key, value, description });
-    
     if (!key || value === undefined) {
       return res.status(400).json({ success: false, message: 'Key and value are required' });
     }
     
-    // Convert value to number for numeric settings
     let processedValue = value;
-    if (key === 'cod_upfront_amount') {
-      // Allow 0 as a valid value
-      processedValue = value === '' || value === null || value === undefined ? 39 : Number(value);
+    // Ensure dates are stored correctly for weekend pricing
+    if (key === 'weekend_pricing' && value.dates && Array.isArray(value.dates)) {
+        processedValue = {
+            ...value,
+            dates: value.dates.map(dateStr => new Date(dateStr))
+        };
     }
     
-    // Use findOneAndUpdate with upsert to create or update
     const setting = await Settings.findOneAndUpdate(
       { key },
       { 
         value: processedValue, 
         description: description || '',
-        updatedAt: new Date()
       },
       { 
         new: true, 
@@ -67,8 +63,6 @@ const upsertSetting = async (req, res) => {
         runValidators: true 
       }
     );
-    
-    console.log('Setting saved:', setting);
     
     res.status(200).json({ 
       success: true, 
@@ -94,7 +88,6 @@ const deleteSetting = async (req, res) => {
     res.status(200).json({ 
       success: true, 
       message: 'Setting deleted successfully',
-      setting 
     });
   } catch (error) {
     console.error('Error deleting setting:', error);
@@ -102,59 +95,12 @@ const deleteSetting = async (req, res) => {
   }
 };
 
-// Initialize default settings
-const initializeDefaultSettings = async () => {
-  try {
-    const defaultSettings = [
-      {
-        key: 'cod_upfront_amount',
-        value: 39,
-        description: 'Upfront payment amount for Cash on Delivery orders (in rupees)'
-      }
-    ];
-    
-    for (const setting of defaultSettings) {
-      const existingSetting = await Settings.findOne({ key: setting.key });
-      if (!existingSetting) {
-        await Settings.create(setting);
-        console.log(`Default setting created: ${setting.key}`);
-      }
-    }
-  } catch (error) {
-    console.error('Error initializing default settings:', error);
-  }
-};
 
-// Get COD upfront amount (public endpoint)
-const getCodUpfrontAmount = async (req, res) => {
-  try {
-    const setting = await Settings.findOne({ key: 'cod_upfront_amount' });
-    let amount = 39; // Default to 39 if not found
-    
-    if (setting) {
-      // Ensure the value is a number and allow 0 as valid
-      amount = (setting.value === '' || setting.value === null || setting.value === undefined) ? 39 : Number(setting.value);
-    }
-    
-    res.status(200).json({ 
-      success: true, 
-      amount: amount 
-    });
-  } catch (error) {
-    console.error('Error fetching COD upfront amount:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Failed to fetch COD upfront amount',
-      amount: 39 // Fallback to default
-    });
-  }
-};
 
 module.exports = {
   getAllSettings,
   getSettingByKey,
   upsertSetting,
   deleteSetting,
-  initializeDefaultSettings,
-  getCodUpfrontAmount
-}; 
+  
+};

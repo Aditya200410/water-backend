@@ -18,7 +18,7 @@ const bestSellerRoutes = require('./routes/bestSeller');
 const cartRoutes = require('./routes/cart');
 const fs = require('fs');
 const heroCarouselRoutes = require('./routes/heroCarousel');
-const sellerRoutes = require('./routes/seller');
+
 const couponRoutes = require('./routes/coupon');
 const crypto = require('crypto');
 const bookingRoutes = require('./routes/bookingRoutes');
@@ -26,11 +26,7 @@ const settingsController = require('./controllers/settingsController');
 const app = express();
 
 
-// Generate a random JWT secret for seller authentication if not provided
-if (!process.env.JWT_SECRET_SELLER) {
-  process.env.JWT_SECRET_SELLER = crypto.randomBytes(64).toString('hex');
-  console.log('Generated random JWT_SECRET_SELLER');
-}
+
 
 // CORS configuration - Allow specific origins for production
 const allowedOrigins = [
@@ -138,7 +134,7 @@ app.use('/api/categories', categoryRoutes);
 app.use('/api/featured-products', featuredProductRoutes);
 app.use('/api/cart', cartRoutes);
 app.use('/api/hero-carousel', heroCarouselRoutes);
-app.use('/api/seller', sellerRoutes);
+
 app.use('/api/coupons', couponRoutes);
 app.use("/api/blog", blogRoutes); // Blog routes
 app.use('/api/data-page', require('./routes/dataPage'));
@@ -187,12 +183,7 @@ app.listen(PORT, async () => {
     console.log(`Server is running on port ${PORT}`);
     
     // Initialize default settings
-    try {
-        await settingsController.initializeDefaultSettings();
-        console.log('Default settings initialized successfully');
-    } catch (error) {
-        console.error('Failed to initialize default settings:', error);
-    }
+    
 }); 
 
 

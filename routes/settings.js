@@ -4,13 +4,12 @@ const settingsController = require('../controllers/settingsController');
 const { authenticateToken } = require('../middleware/auth');
 
 // Get all settings
-router.get('/', authenticateToken, settingsController.getAllSettings);
+router.get('/', settingsController.getAllSettings);
 
 // Create or update a setting
-router.post('/', authenticateToken, settingsController.upsertSetting);
+router.post('/',  settingsController.upsertSetting);
 
-// Public endpoint to get COD upfront amount (must come before /:key route)
-router.get('/cod-upfront-amount', settingsController.getCodUpfrontAmount);
+
 
 // Get a specific setting by key
 router.get('/:key', authenticateToken, settingsController.getSettingByKey);

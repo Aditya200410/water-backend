@@ -1,29 +1,20 @@
 const mongoose = require('mongoose');
 
-const settingsSchema = new mongoose.Schema({
+const settingSchema = new mongoose.Schema({
   key: {
     type: String,
     required: true,
     unique: true,
-    trim: true
+    trim: true,
   },
   value: {
-    type: mongoose.Schema.Types.Mixed,
-    required: true
+    type: mongoose.Schema.Types.Mixed, // Use Mixed type to store objects
+    required: true,
   },
   description: {
     type: String,
-    trim: true
+    trim: true,
   },
-  updatedAt: {
-    type: Date,
-    default: Date.now
-  }
-}, {
-  timestamps: true
-});
+}, { timestamps: true });
 
-// Index for faster lookups
-settingsSchema.index({ key: 1 });
-
-module.exports = mongoose.model('Settings', settingsSchema); 
+module.exports = mongoose.model('Settings', settingSchema);
