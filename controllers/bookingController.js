@@ -169,7 +169,9 @@ exports.createBooking = async (req, res) => {
     const booking = new Booking(bookingData);
     await booking.save();
     console.log("[createBooking] Booking saved:", booking._id);
-
+const formattedDate = booking.date
+  ? new Date(booking.date).toLocaleDateString("en-IN")
+  : "";
     // ✅ MODIFICATION: Only send WhatsApp for cash bookings immediately.
     // For online payments, we'll send it after verification.
     if (paymentType === "cash") {
@@ -177,15 +179,15 @@ exports.createBooking = async (req, res) => {
         "[createBooking] Cash payment flow, sending WhatsApp notification."
       );
       await sendWhatsAppMessage({
-        id: booking.waterpark.toString(),
-        waterparkName: booking.waterparkName,
-        customerName: booking.name,
-        customerPhone: booking.phone, // Using the phone number
-        date: booking.date,
-        adultquantity: booking.adults,
-        childquantity: booking.children,
-        totalAmount: booking.totalAmount,
-        left: booking.leftamount,
+     id: booking.waterpark.toString(),
+      waterparkName: booking.waterparkName,
+      customerName: booking.name,
+      customerPhone: booking.phone, // Using the phone number from the booking
+      date: formattedDate,
+      adultquantity: booking.adults,
+      childquantity: booking.children,
+      totalAmount: booking.totalAmount,
+      left: booking.leftamount,
       });
 
       return res
@@ -203,6 +205,7 @@ exports.createBooking = async (req, res) => {
           booking,
         });
     }
+
 
     const orderOptions = {
       amount: advancePaise,
