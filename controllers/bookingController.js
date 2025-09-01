@@ -185,6 +185,23 @@ const formattedDate = booking.date
     
     // ✅ NEW: Send WhatsApp message AFTER successful payment verification
   
+// ✅ NEW: Send WhatsApp message AFTER successful payment verification
+    console.log(
+      "[verifyPayment] Sending WhatsApp confirmation to: self",
+      
+    );
+    await selfWhatsAppMessage({
+      id: booking.waterpark.toString(),
+      waterparkName: booking.waterparkName,
+      customerName: booking.name,
+      customerPhone: booking.phone, // Using the phone number from the booking
+      date: booking.date,
+      adultquantity: booking.adults,
+      childquantity: booking.children,
+      totalAmount: booking.totalAmount,
+      left: booking.leftamount,
+    });
+    console.log("[verifyPayment] WhatsApp confirmation sent.");
 
 
     await parkWhatsAppMessage({
@@ -341,6 +358,23 @@ exports.verifyPayment = async (req, res) => {
     console.log("[verifyPayment] WhatsApp confirmation sent.");
 
  
+   // ✅ NEW: Send WhatsApp message AFTER successful payment verification
+    console.log(
+      "[verifyPayment] Sending WhatsApp confirmation to: self",
+      
+    );
+    await selfWhatsAppMessage({
+      id: booking.waterpark.toString(),
+      waterparkName: booking.waterparkName,
+      customerName: booking.name,
+      customerPhone: booking.phone, // Using the phone number from the booking
+      date: booking.date,
+      adultquantity: booking.adults,
+      childquantity: booking.children,
+      totalAmount: booking.totalAmount,
+      left: booking.leftamount,
+    });
+    console.log("[verifyPayment] WhatsApp confirmation sent.");
 
  console.log(
       "[verifyPayment] Sending WhatsApp confirmation to park:",

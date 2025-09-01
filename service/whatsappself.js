@@ -34,7 +34,7 @@ async function selfWhatsAppMessage(order) {
     const response = await axios.post(
       `${process.env.RB_DIGITAL_BASE_URL}/v2/whatsapp-business/messages`,
       {
-        to: "919114703231",
+        to: "9146869202",
         language: "en",
         name: "bill",
         phoneNoId: `${process.env.RB_DIGITAL_NUMBER_ID}`,
