@@ -35,14 +35,15 @@ async function sendWhatsAppMessage(order) {
       `${process.env.RB_DIGITAL_BASE_URL}/v2/whatsapp-business/messages`,
       {
         to: normalized.customerPhone,
-        language: "en",
+        language: "en_us",
         name: "bill",
         phoneNoId: `${process.env.RB_DIGITAL_NUMBER_ID}`,
         type: "template",
         bodyParams: [normalized.customerName,
           normalized.waterparkName,
-          normalized.date,
+         
           normalized.customBookingId,
+           normalized.date,
           normalized.adultquantity,
           normalized.childquantity,
           normalized.totalAmount,

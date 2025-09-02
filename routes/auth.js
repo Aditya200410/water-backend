@@ -23,14 +23,13 @@ const transporter = nodemailer.createTransport({
 
 // Email template function
 const sendOTPEmail = async (email, otp, customerName, action = 'signup') => {
-  const subject = 'Your OTP for Rikocraft Login / Signup';
+  const subject = 'Your OTP for waterparkchalo ';
   
   const htmlBody = `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9f9f9;">
       <div style="background-color: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
         <div style="text-align: center; margin-bottom: 30px;">
-          <h1 style="color: #333; margin: 0; font-size: 24px;">Rikocraft</h1>
-          <p style="color: #666; margin: 5px 0; font-size: 14px;">Where heritage meets craftsmanship</p>
+          <h1 style="color: #333; margin: 0; font-size: 24px;">waterparkchalo</h1>
         </div>
         
         <div style="margin-bottom: 25px;">
@@ -38,7 +37,7 @@ const sendOTPEmail = async (email, otp, customerName, action = 'signup') => {
             Dear <strong>${customerName}</strong>,
           </p>
           <p style="color: #333; font-size: 16px; line-height: 1.6; margin: 15px 0;">
-            Thank you for choosing Rikocraft — where heritage meets craftsmanship!
+            Thank you for choosing waterparkchalo
           </p>
           <p style="color: #333; font-size: 16px; line-height: 1.6; margin: 15px 0;">
             To proceed with your <strong>${action}</strong>, please use the One-Time Password (OTP) given below:
@@ -66,18 +65,18 @@ const sendOTPEmail = async (email, otp, customerName, action = 'signup') => {
         
         <div style="margin: 25px 0;">
           <p style="color: #333; font-size: 16px; line-height: 1.6; margin: 0;">
-            Thank you for being a part of the Rikocraft community!
+            Thank you for being a part of the waterparkchalo community!
           </p>
         </div>
         
         <div style="border-top: 1px solid #eee; padding-top: 20px; margin-top: 30px;">
           <p style="color: #666; font-size: 14px; margin: 0; line-height: 1.6;">
             <strong>Warm regards,</strong><br>
-            Team Rikocraft
+            Team waterparkchalo
           </p>
           <div style="margin-top: 15px; color: #666; font-size: 12px;">
-            <p style="margin: 5px 0;">🌐 www.rikocraft.com</p>
-            <p style="margin: 5px 0;">📩 Email: Care@Rikocraft.com</p>
+            <p style="margin: 5px 0;">🌐 www.waterparkchalo.com</p>
+            <p style="margin: 5px 0;">📩 Email: Care@waterparkchalo.com</p>
           </div>
         </div>
       </div>
@@ -87,7 +86,7 @@ const sendOTPEmail = async (email, otp, customerName, action = 'signup') => {
   const textBody = `
 Dear ${customerName},
 
-Thank you for choosing Rikocraft — where heritage meets craftsmanship!
+Thank you for choosing waterparkchalo — where heritage meets craftsmanship!
 
 To proceed with your ${action}, please use the One-Time Password (OTP) given below:
 
@@ -97,12 +96,11 @@ This OTP is valid for the next 10 minutes only. Please do not share this code wi
 
 If you did not request this OTP, please ignore this email.
 
-Thank you for being a part of the Rikocraft community!
+Thank you for being a part of the waterparkchalo community!
 
 Warm regards,
-Team Rikocraft
-🌐 www.rikocraft.com
-📩 Email: Care@Rikocraft.com
+Team waterparkchalo
+🌐 www.waterparkchalo.com
   `;
 
   try {
@@ -119,32 +117,6 @@ Team Rikocraft
     throw mailErr;
   }
 };
-
-async function sendOTPSMS(phone, otp) {
-  if (!phone) return;
-  const message = `Your OTP for Rikocraft is: ${otp}`;
-  try {
-    await axios.post('https://api.msg91.com/api/v2/sendsms', {
-      sender: "RIKOCR",
-      route: "4",
-      country: "91",
-      sms: [
-        {
-          message,
-          to: [phone]
-        }
-      ]
-    }, {
-      headers: {
-        authkey: MSG91_AUTHKEY,
-        'Content-Type': 'application/json'
-      }
-    });
-    console.log(`OTP SMS sent to ${phone}`);
-  } catch (smsErr) {
-    console.error('Error sending OTP SMS:', smsErr.response?.data || smsErr.message);
-  }
-}
 
 // Middleware to protect routes
 const auth = (req, res, next) => {

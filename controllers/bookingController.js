@@ -7,7 +7,36 @@ const Razorpay = require("razorpay");
 const { sendWhatsAppMessage } = require("../service/whatsappService");
 const {selfWhatsAppMessage }= require("../service/whatsappself");
 const {parkWhatsAppMessage }= require("../service/whatsapppark")
+const Counter = require("../models/Counter")
 
+// ✅ 2. ADD THIS HELPER FUNCTION
+// This function atomically finds and increments a counter in the database.
+async function getNextSequenceValue(sequenceName) {
+  const sequenceDocument = await Counter.findOneAndUpdate(
+    { _id: sequenceName },
+    // This is an aggregation pipeline. It's a modern way to perform complex atomic updates.
+    [
+      {
+        // Step 1: Set the sequence_value. If it doesn't exist (on insert), default it to 399. Otherwise, keep its current value.
+        $set: {
+          sequence_value: {
+            $ifNull: ["$sequence_value", 399] 
+          }
+        }
+      },
+      {
+        // Step 2: Set the sequence_value again, this time adding 1 to the value from the previous step.
+        $set: {
+          sequence_value: {
+            $add: ["$sequence_value", 1]
+          }
+        }
+      }
+    ],
+    { new: true, upsert: true } // Return the new value and create the doc if it doesn't exist
+  );
+  return sequenceDocument.sequence_value;
+}
 // ----------------------------
 // Razorpay Initialization
 // ----------------------------
@@ -144,25 +173,20 @@ exports.createBooking = async (req, res) => {
         .json({ success: false, message: "Invalid amounts" });
     }
 
-    // ✅ START: CUSTOM BOOKING ID GENERATION
-    console.log("[createBooking] Generating custom booking ID...");
-    const lastBooking = await Booking.findOne().sort({ createdAt: -1 });
-    let nextBookingNumber = 400; // Starting number
+   // ✅ START: CORRECTED BOOKING ID GENERATION
+console.log("[createBooking] Generating custom booking ID for:", waterparkName);
 
-    if (lastBooking && lastBooking.customBookingId) {
-        // Regex to extract the number from the end of the string
-        const match = lastBooking.customBookingId.match(/\d+$/);
-        if (match) {
-            const lastNumber = parseInt(match[0], 10);
-            nextBookingNumber = lastNumber + 1;
-        }
-    }
-
-    // Sanitize park name to create a clean prefix (e.g., "Fun Park" -> "FunPark")
+// ✅ 3. REPLACE YOUR OLD ID LOGIC WITH THIS
+    // Sanitize park name to use as the counter's name
     const parkPrefix = waterparkName.replace(/\s+/g, '');
-    const customBookingId = `${parkPrefix}${nextBookingNumber}`;
-    console.log("[createBooking] Generated Custom ID:", customBookingId);
-    // ✅ END: CUSTOM BOOKING ID GENERATION
+    
+    // Get the next unique number for this park from our atomic counter
+    const bookingNumber = await getNextSequenceValue(parkPrefix);
+    
+    // Create the final, unique booking ID
+    const customBookingId = `${parkPrefix}${bookingNumber}`;
+    console.log("[createBooking] Generated Atomic Custom ID:", customBookingId);
+
 
     const bookingData = {
       customBookingId, // Add the generated ID to the booking data
@@ -406,7 +430,8 @@ exports.verifyPayment = async (req, res) => {
     });
     console.log("[verifyPayment] All WhatsApp confirmations sent.");
 
-    const frontendUrl = `https://waterparkchalo.com/ticket?bookingId=${booking._id}`;
+    // ✅ Use the readable customBookingId for the frontend URL
+const frontendUrl = `https://waterparkchalo.com/ticket?bookingId=${booking.customBookingId}`;
     console.log("[verifyPayment] Ticket URL:", frontendUrl);
 
     // ✅ MODIFICATION: Use the new customBookingId in the email for a better user experience
@@ -548,10 +573,10 @@ exports.getSingleBooking = async (req, res) => {
   console.log("[getSingleBooking] Params:", req.params);
 
   try {
-    const { id } = req.params;
-    const booking = await Booking.findById(id);
+    const { customBookingId } = req.params;
+     const booking = await Booking.findOne({ customBookingId: customBookingId });
     if (!booking) {
-      console.warn("[getSingleBooking] Booking not found:", id);
+      console.warn("[getSingleBooking] Booking not found:", customBookingId);
       return res
         .status(404)
         .json({ success: false, message: "Booking not found." });
