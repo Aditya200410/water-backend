@@ -626,7 +626,7 @@ exports.getOrdersByEmail = async (req, res) => {
 exports.getAllBookings = async (req, res) => {
   console.log("[getAllBookings] Fetching all bookings...");
   try {
-    const bookings = await Booking.find().sort({ bookingDate: -1 });
+   const bookings = await Booking.findOne({  paymentStatus: "completed" });
     
     console.log("[getAllBookings] Total bookings found:", bookings.length);
     return res.status(200).json(bookings);
