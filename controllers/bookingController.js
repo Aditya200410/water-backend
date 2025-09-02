@@ -574,7 +574,7 @@ exports.getSingleBooking = async (req, res) => {
 
   try {
     const { customBookingId } = req.params;
-     const booking = await Booking.findOne({ customBookingId: customBookingId });
+     const booking = await Booking.findOne({ customBookingId: customBookingId , paymentStatus: "completed" });
     if (!booking) {
       console.warn("[getSingleBooking] Booking not found:", customBookingId);
       return res
@@ -627,6 +627,7 @@ exports.getAllBookings = async (req, res) => {
   console.log("[getAllBookings] Fetching all bookings...");
   try {
     const bookings = await Booking.find().sort({ bookingDate: -1 });
+    
     console.log("[getAllBookings] Total bookings found:", bookings.length);
     return res.status(200).json(bookings);
   } catch (error) {
