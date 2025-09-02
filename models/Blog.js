@@ -9,25 +9,25 @@ const blogSchema = new mongoose.Schema({
 
   description: {
     type: String,
-    required: true,
+    required: false,
     trim: true
   },
  
  
   category: {
     type: String,
-    required: true,
+    required: false,
     trim: true
   },
 
   utility: {
     type: String,
-    required: true,
+    required: false,
     trim: true
   },
   care: {
     type: String,
-    required: true,
+    required: false,
     trim: true
   },
  

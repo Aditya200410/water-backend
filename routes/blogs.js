@@ -62,7 +62,7 @@ router.get("/section/:section", getBlogsBySection);
 router.get("/:id", getBlog);
 
 // Upload images and create blog
-router.post("/upload", handleUpload, createBlogWithFiles);
+router.post("/", handleUpload, createBlogWithFiles);
 
 // Update blog by id
 router.put("/:id", handleUpload, updateBlogWithFiles);

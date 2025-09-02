@@ -30,7 +30,7 @@ const getBlogsBySection = async (req, res) => {
       case 'mostloved':
         query = { isMostLoved: true };
         break;
-         case 'patner':
+      case 'patner':
         query = { isPatner: true };
         break;
       default:
@@ -59,7 +59,7 @@ const getBlog = async (req, res) => {
   }
 };
 
-// Create new blog with file upload
+// Create new blog with file upload (FIXED)
 const createBlogWithFiles = async (req, res) => {
   try {
     console.log('=== Starting Blog Creation ===');
@@ -68,32 +68,31 @@ const createBlogWithFiles = async (req, res) => {
     console.log('Body data:', req.body);
     console.log('Auth token:', req.headers.authorization);
 
+    // This block was removed to make the mainImage optional
+    /*
     if (!req.files || !req.files.mainImage) {
       console.log('Error: Missing main image');
       return res.status(400).json({ 
         error: 'Main image is required. Make sure you are uploading as multipart/form-data and the main image field is named "mainImage".' 
       });
     }
+    */
 
-    const files = req.files;
+    const files = req.files || {}; // Use empty object if no files are sent
     const blogData = req.body;
     
-    // Validate required fields
-    const requiredFields = [
-     
-    ];
+    // This array is already empty, which makes all text fields optional
+    const requiredFields = [];
 
-    console.log('Validating required fields...');
+    // This validation logic will not run since requiredFields is empty
     const missingFields = [];
     for (const field of requiredFields) {
       if (!blogData[field]) {
         missingFields.push(field);
-        console.log(`Missing required field: ${field}`);
       }
     }
 
     if (missingFields.length > 0) {
-      console.log('Error: Missing required fields:', missingFields);
       return res.status(400).json({ error: `Missing required fields: ${missingFields.join(', ')}` });
     }
 
@@ -129,7 +128,7 @@ const createBlogWithFiles = async (req, res) => {
       care: blogData.care,
       price: parseFloat(blogData.price),
       regularPrice: parseFloat(blogData.regularPrice),
-      image: imagePaths[0], // Main image Cloudinary URL
+      image: imagePaths[0], // Main image Cloudinary URL (will be undefined if no image)
       images: imagePaths, // All Cloudinary URLs
       inStock: blogData.inStock === 'true' || blogData.inStock === true,
       isBestSeller: blogData.isBestSeller === 'true' || blogData.isBestSeller === true,
@@ -176,14 +175,11 @@ const updateBlogWithFiles = async (req, res) => {
       return res.status(404).json({ message: "Blog not found" });
     }
 
-    // Initialize imagePaths with existing images
     let imagePaths = existingBlog.images || [];
     if (!Array.isArray(imagePaths)) {
-      // If images is not an array, initialize it with the main image if it exists
       imagePaths = existingBlog.image ? [existingBlog.image] : [];
     }
 
-    // Handle main image update
     if (files.mainImage && files.mainImage[0]) {
       const mainImageUrl = files.mainImage[0].path;
       if (imagePaths.length === 0) {
@@ -193,7 +189,6 @@ const updateBlogWithFiles = async (req, res) => {
       }
     }
 
-    // Handle additional images
     for (let i = 1; i <= 3; i++) {
       if (files[`image${i}`] && files[`image${i}`][0]) {
         const imageUrl = files[`image${i}`][0].path;
@@ -205,12 +200,10 @@ const updateBlogWithFiles = async (req, res) => {
       }
     }
 
-    // Ensure we have at least one image
     if (imagePaths.length === 0 && existingBlog.image) {
       imagePaths.push(existingBlog.image);
     }
 
-    // Update blog object
     const updatedBlog = {
       name: blogData.name || existingBlog.name,
       material: blogData.material || existingBlog.material,
@@ -229,8 +222,7 @@ const updateBlogWithFiles = async (req, res) => {
       isBestSeller: blogData.isBestSeller !== undefined ? (blogData.isBestSeller === 'true' || blogData.isBestSeller === true) : existingBlog.isBestSeller,
       isFeatured: blogData.isFeatured !== undefined ? (blogData.isFeatured === 'true' || blogData.isFeatured === true) : existingBlog.isFeatured,
       isMostLoved: blogData.isMostLoved !== undefined ? (blogData.isMostLoved === 'true' || blogData.isMostLoved === true) : existingBlog.isMostLoved,
-       isPatner: blogData.isPatner !== undefined ? (blogData.isPatner === 'true' || blogData.isPatner === true) : existingBlog.isPatner,
-      
+      isPatner: blogData.isPatner !== undefined ? (blogData.isPatner === 'true' || blogData.isPatner === true) : existingBlog.isPatner,
       codAvailable: blogData.codAvailable === 'false' ? false : true,
       stock: typeof blogData.stock !== 'undefined' ? Number(blogData.stock) : existingBlog.stock
     };
@@ -253,13 +245,11 @@ const updateBlogSections = async (req, res) => {
     const { id } = req.params;
     const { isBestSeller, isFeatured, isMostLoved , isPatner } = req.body;
 
-    // Validate that at least one section flag is provided
     if (isBestSeller === undefined && isFeatured === undefined && isMostLoved === undefined && isPatner === undefined) {
       console.log('Error: No section flags provided');
       return res.status(400).json({ message: "At least one section flag must be provided" });
     }
 
-    // Find the blog
     const blog = await Blog.findById(id);
     if (!blog) {
       console.log('Error: Blog not found');
@@ -273,7 +263,6 @@ const updateBlogSections = async (req, res) => {
       isPatner: blog.isPatner
     });
 
-    // Build update object with only the provided flags
     const updates = {};
     if (isBestSeller !== undefined) updates.isBestSeller = isBestSeller;
     if (isFeatured !== undefined) updates.isFeatured = isFeatured;
@@ -282,7 +271,6 @@ const updateBlogSections = async (req, res) => {
 
     console.log('Applying updates:', updates);
 
-    // Update the blog with new section flags
     const updatedBlog = await Blog.findByIdAndUpdate(
       id,
       { $set: updates },
@@ -336,4 +324,4 @@ module.exports = {
   updateBlogWithFiles,
   updateBlogSections,
   deleteBlog
-}; 
+};
