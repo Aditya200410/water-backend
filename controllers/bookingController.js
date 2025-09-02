@@ -128,6 +128,7 @@ exports.createBooking = async (req, res) => {
       paymentType,
       waterparkName,
       total,
+      terms
     } = req.body;
 
     // Validation
@@ -205,6 +206,7 @@ console.log("[createBooking] Generating custom booking ID for:", waterparkName);
       paymentStatus: paymentType === "cash" ? "Pending" : "Initiated",
       paymentType,
       bookingDate: new Date(),
+      terms
     };
 
     if (req.user?.userId) {

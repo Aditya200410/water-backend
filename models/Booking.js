@@ -30,7 +30,7 @@ waternumber: { type: String, required: true },
   paymentStatus: { type: String, default: "Pending" },
   
   totalAmount : { type: Number, required: true ,default: 0}, // Total price is mandatory
-
+terms:{type:String,required:false},
   leftamount: { type: Number, required:true }, // Amount left to pay
 });
 
