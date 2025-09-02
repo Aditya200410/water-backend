@@ -10,7 +10,7 @@ async function sendWhatsAppMessage(order) {
 }
     // Required fields for the WhatsApp template
   const normalized = {
-      id: normalize(order.id),
+      customBookingId: normalize(order.customBookingId),
       customerName: normalize(order.customerName),
       waterparkName: normalize(order.waterparkName),
       customerPhone: normalize(order.customerPhone),
@@ -42,7 +42,7 @@ async function sendWhatsAppMessage(order) {
         bodyParams: [normalized.customerName,
           normalized.waterparkName,
           normalized.date,
-
+          normalized.customBookingId,
           normalized.adultquantity,
           normalized.childquantity,
           normalized.totalAmount,

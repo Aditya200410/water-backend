@@ -78,6 +78,7 @@ const safeDate = (value) => {
   return isNaN(d.getTime()) ? null : d;
 };
 
+
 // ----------------------------
 // Create Booking (with Razorpay integration)
 // ----------------------------
@@ -87,7 +88,7 @@ exports.createBooking = async (req, res) => {
   try {
     const {
       waterpark,
-        waternumber,
+      waternumber,
       name,
       email,
       phone,
@@ -105,7 +106,7 @@ exports.createBooking = async (req, res) => {
     if (!waterpark) missing.push("waterpark");
     if (!name) missing.push("name");
     if (!email) missing.push("email");
-    if (!phone) missing.push("phone"); // Phone is already being validated
+    if (!phone) missing.push("phone");
     if (!date) missing.push("date");
     if (advanceAmount === undefined || advanceAmount === null)
       missing.push("advanceAmount");
@@ -143,13 +144,34 @@ exports.createBooking = async (req, res) => {
         .json({ success: false, message: "Invalid amounts" });
     }
 
+    // ✅ START: CUSTOM BOOKING ID GENERATION
+    console.log("[createBooking] Generating custom booking ID...");
+    const lastBooking = await Booking.findOne().sort({ createdAt: -1 });
+    let nextBookingNumber = 400; // Starting number
+
+    if (lastBooking && lastBooking.customBookingId) {
+        // Regex to extract the number from the end of the string
+        const match = lastBooking.customBookingId.match(/\d+$/);
+        if (match) {
+            const lastNumber = parseInt(match[0], 10);
+            nextBookingNumber = lastNumber + 1;
+        }
+    }
+
+    // Sanitize park name to create a clean prefix (e.g., "Fun Park" -> "FunPark")
+    const parkPrefix = waterparkName.replace(/\s+/g, '');
+    const customBookingId = `${parkPrefix}${nextBookingNumber}`;
+    console.log("[createBooking] Generated Custom ID:", customBookingId);
+    // ✅ END: CUSTOM BOOKING ID GENERATION
+
     const bookingData = {
+      customBookingId, // Add the generated ID to the booking data
       waterpark,
       waterparkName,
       name,
-        waternumber,
+      waternumber,
       email,
-      phone, // Phone is saved in booking data
+      phone,
       date: bookingDateObj,
       adults: Number(adults) || 0,
       children: Number(children) || 0,
@@ -172,81 +194,73 @@ exports.createBooking = async (req, res) => {
     console.log("[createBooking] Booking data prepared:", bookingData);
     const booking = new Booking(bookingData);
     await booking.save();
-    console.log("[createBooking] Booking saved:", booking._id);
-const formattedDate = booking.date
-  ? new Date(booking.date).toLocaleDateString("en-IN")
-  : "";
-    // ✅ MODIFICATION: Only send WhatsApp for cash bookings immediately.
-    // For online payments, we'll send it after verification.
+    console.log("[createBooking] Booking saved with custom ID:", booking.customBookingId);
+
     if (paymentType === "cash") {
-      console.log(
-        "[createBooking] Cash payment flow, sending WhatsApp notification."
-      );
-    
-    // ✅ NEW: Send WhatsApp message AFTER successful payment verification
-  
-// ✅ NEW: Send WhatsApp message AFTER successful payment verification
-    console.log(
-      "[verifyPayment] Sending WhatsApp confirmation to: self",
+        console.log(
+            "[createBooking] Cash payment flow, sending WhatsApp notification."
+        );
       
-    );
-    await selfWhatsAppMessage({
-      id: booking.waterpark.toString(),
-      waterparkName: booking.waterparkName,
-      customerName: booking.name,
-      customerPhone: booking.phone, // Using the phone number from the booking
-      date: booking.date,
-      adultquantity: booking.adults,
-      childquantity: booking.children,
-      totalAmount: booking.totalAmount,
-      left: booking.leftamount,
-    });
-    console.log("[verifyPayment] WhatsApp confirmation sent.");
+        console.log("[createBooking] Sending WhatsApp confirmation to: self");
+        await selfWhatsAppMessage({
+          id: booking.waterpark.toString(),
+          waterparkName: booking.waterparkName,
+          customBookingId:booking.customBookingId,
+          customerName: booking.name,
+          customerPhone: booking.phone,
+          date: booking.date,
+          adultquantity: booking.adults,
+          childquantity: booking.children,
+          totalAmount: booking.totalAmount,
+          left: booking.leftamount,
+        });
+        console.log("[createBooking] Self WhatsApp confirmation sent.");
 
+        await parkWhatsAppMessage({
+          id: booking.waterpark.toString(),
+          waterparkName: booking.waterparkName,
+          customBookingId:booking.customBookingId,
+          customerName: booking.name,
 
-    await parkWhatsAppMessage({
-      id: booking.waterpark.toString(),
-      waterparkName: booking.waterparkName,
-      customerName: booking.name,
-      waternumber :booking.waternumber,
-      customerPhone: booking.phone, // Using the phone number from the booking
-      date: booking.date,
-      adultquantity: booking.adults,
-      childquantity: booking.children,
-      totalAmount: booking.totalAmount,
-      left: booking.leftamount,
-    });
-    console.log("[verifyPayment] WhatsApp confirmation sent." );
+          waternumber :booking.waternumber,
+          customerPhone: booking.phone,
+          date: booking.date,
+          adultquantity: booking.adults,
+          childquantity: booking.children,
+          totalAmount: booking.totalAmount,
+          left: booking.leftamount,
+        });
+        console.log("[createBooking] Park WhatsApp confirmation sent.");
 
-      return res
-        .status(201)
-        .json({ success: true, message: "Booking created successfully", booking });
+        return res
+            .status(201)
+            .json({ success: true, message: "Booking created successfully", booking });
     }
 
     if (!razorpay) {
-      console.error("[createBooking] Razorpay not configured.");
-      return res
-        .status(500)
-        .json({
-          success: false,
-          message: "Payment gateway not configured",
-          booking,
-        });
+        console.error("[createBooking] Razorpay not configured.");
+        return res
+            .status(500)
+            .json({
+                success: false,
+                message: "Payment gateway not configured",
+                booking,
+            });
     }
-
 
     const orderOptions = {
       amount: advancePaise,
       currency: "INR",
-      receipt: booking._id.toString(),
+      receipt: booking._id.toString(), // Internal receipt still uses the unique _id
       payment_capture: 1,
       notes: {
         bookingId: booking._id.toString(),
+        customBookingId: booking.customBookingId, // You can add the custom ID here for reference
         waterparkName,
         customerName: name,
         customerEmail: email,
         customerPhone: phone,
-        waternumber :waternumber,
+        waternumber: waternumber,
       },
     };
 
@@ -271,6 +285,14 @@ const formattedDate = booking.date
     });
   } catch (error) {
     console.error("[createBooking] Error:", error);
+    // Handle potential duplicate key error for customBookingId
+    if (error.code === 11000) {
+        return res.status(500).json({
+            success: false,
+            message: "Error creating booking: A booking ID conflict occurred. Please try again.",
+            error: error.message,
+        });
+    }
     return res
       .status(500)
       .json({
@@ -280,6 +302,7 @@ const formattedDate = booking.date
       });
   }
 };
+
 
 // ----------------------------
 // Verify Payment
@@ -336,70 +359,57 @@ exports.verifyPayment = async (req, res) => {
     await booking.save();
     console.log(
       "[verifyPayment] Booking updated with payment success:",
-      booking._id
+      booking.customBookingId
     );
 
-    // ✅ NEW: Send WhatsApp message AFTER successful payment verification
-    console.log(
-      "[verifyPayment] Sending WhatsApp confirmation to:",
-      booking.phone
-    );
+    // ✅ Send WhatsApp messages after successful payment verification
+    console.log("[verifyPayment] Sending WhatsApp confirmations...");
+    
     await sendWhatsAppMessage({
-      id: booking.waterpark.toString(),
-      waterparkName: booking.waterparkName,
-      customerName: booking.name,
-      customerPhone: booking.phone, // Using the phone number from the booking
-      date: booking.date,
-      adultquantity: booking.adults,
-      childquantity: booking.children,
-      totalAmount: booking.totalAmount,
-      left: booking.leftamount,
+        id: booking.waterpark.toString(),
+        waterparkName: booking.waterparkName,
+        customBookingId:booking.customBookingId,
+        customerName: booking.name,
+        customerPhone: booking.phone,
+        date: booking.date,
+        adultquantity: booking.adults,
+        childquantity: booking.children,
+        totalAmount: booking.totalAmount,
+        left: booking.leftamount,
     });
-    console.log("[verifyPayment] WhatsApp confirmation sent.");
-
- 
-   // ✅ NEW: Send WhatsApp message AFTER successful payment verification
-    console.log(
-      "[verifyPayment] Sending WhatsApp confirmation to: self",
-      
-    );
+    
     await selfWhatsAppMessage({
-      id: booking.waterpark.toString(),
-      waterparkName: booking.waterparkName,
-      customerName: booking.name,
-      customerPhone: booking.phone, // Using the phone number from the booking
-      date: booking.date,
-      adultquantity: booking.adults,
-      childquantity: booking.children,
-      totalAmount: booking.totalAmount,
-      left: booking.leftamount,
+        id: booking.waterpark.toString(),
+        waterparkName: booking.waterparkName,
+        customBookingId:booking.customBookingId,
+        customerName: booking.name,
+        customerPhone: booking.phone,
+        date: booking.date,
+        adultquantity: booking.adults,
+        childquantity: booking.children,
+        totalAmount: booking.totalAmount,
+        left: booking.leftamount,
     });
-    console.log("[verifyPayment] WhatsApp confirmation sent.");
 
- console.log(
-      "[verifyPayment] Sending WhatsApp confirmation to park:",
-     
-    );
     await parkWhatsAppMessage({
-      id: booking.waterpark.toString(),
-      waterparkName: booking.waterparkName,
-      customerName: booking.name,
-      waternumber :booking.waternumber,
-      customerPhone: booking.phone, // Using the phone number from the booking
-      date: booking.date,
-      adultquantity: booking.adults,
-      childquantity: booking.children,
-      totalAmount: booking.totalAmount,
-      left: booking.leftamount,
- 
+        id: booking.waterpark.toString(),
+        waterparkName: booking.waterparkName,
+        customBookingId:booking.customBookingId,
+        customerName: booking.name,
+        waternumber: booking.waternumber,
+        customerPhone: booking.phone,
+        date: booking.date,
+        adultquantity: booking.adults,
+        childquantity: booking.children,
+        totalAmount: booking.totalAmount,
+        left: booking.leftamount,
     });
-    console.log("[verifyPayment] WhatsApp confirmation sent.",);
-
-
+    console.log("[verifyPayment] All WhatsApp confirmations sent.");
 
     const frontendUrl = `https://waterparkchalo.com/ticket?bookingId=${booking._id}`;
     console.log("[verifyPayment] Ticket URL:", frontendUrl);
 
+    // ✅ MODIFICATION: Use the new customBookingId in the email for a better user experience
     await sendEmail(
       [booking.email, "am542062@gmail.com"],
       `Payment Confirmation for ${booking.waterparkName}`,
@@ -419,8 +429,8 @@ exports.verifyPayment = async (req, res) => {
               <tr>
                 <td>
                   <p style="margin:0; color:#666; font-size:12px;">Booking ID</p>
-                  <p style="margin:0; font-family:monospace; color:#1d4ed8;">#${
-                    booking._id
+                  <p style="margin:0; font-family:monospace; color:#1d4ed8; font-weight:bold;">${
+                    booking.customBookingId // <-- Use customBookingId here
                   }</p>
                 </td>
                 <td style="text-align:right;">
@@ -527,6 +537,10 @@ exports.verifyPayment = async (req, res) => {
   }
 };
 
+
+// --- The rest of your controller functions (getSingleBooking, getAllBookings, etc.) remain unchanged. ---
+// --- I am including them here so you can copy-paste the whole file. ---
+
 // ----------------------------
 // Get Single Booking
 // ----------------------------
@@ -542,7 +556,7 @@ exports.getSingleBooking = async (req, res) => {
         .status(404)
         .json({ success: false, message: "Booking not found." });
     }
-    console.log("[getSingleBooking] Booking found:", booking._id);
+    console.log("[getSingleBooking] Booking found:", booking.customBookingId);
     return res.status(200).json({ success: true, booking });
   } catch (error) {
     console.error("[getSingleBooking] Error:", error);
