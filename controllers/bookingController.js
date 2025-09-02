@@ -178,7 +178,7 @@ console.log("[createBooking] Generating custom booking ID for:", waterparkName);
 
 // ✅ 3. REPLACE YOUR OLD ID LOGIC WITH THIS
     // Sanitize park name to use as the counter's name
-    const parkPrefix = waterparkName.replace(/\s+/g, '');
+    const parkPrefix = "waterparkchalo";
     
     // Get the next unique number for this park from our atomic counter
     const bookingNumber = await getNextSequenceValue(parkPrefix);
