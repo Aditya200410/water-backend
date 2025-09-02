@@ -625,11 +625,16 @@ exports.getOrdersByEmail = async (req, res) => {
 // ----------------------------
 // Get All Bookings
 // ----------------------------
+// ----------------------------
+// Get All Bookings
+// ----------------------------
 exports.getAllBookings = async (req, res) => {
   console.log("[getAllBookings] Fetching all bookings...");
   try {
-   const bookings = await Booking.findOne({  paymentStatus: "completed" });
+    // ✅ FIX: Changed findOne to find to get an array of all matching bookings
+    const bookings = await Booking.find({ paymentStatus: "completed" });
     
+    // Now bookings.length will correctly report the number of documents found
     console.log("[getAllBookings] Total bookings found:", bookings.length);
     return res.status(200).json(bookings);
   } catch (error) {
