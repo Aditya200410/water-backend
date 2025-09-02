@@ -60,76 +60,44 @@ const getProduct = async (req, res) => {
 const createProductWithFiles = async (req, res) => {
   try {
     console.log('=== Starting Product Creation ===');
-    console.log('Headers:', req.headers);
     console.log('Files received:', req.files);
     console.log('Body data:', req.body);
-    console.log('Auth token:', req.headers.authorization);
 
     if (!req.files || !req.files.mainImage) {
-      console.log('Error: Missing main image');
       return res.status(400).json({ 
-        error: 'Main image is required. Make sure you are uploading as multipart/form-data and the main image field is named "mainImage".' 
+        error: 'Main image is required. Ensure the field is named "mainImage".' 
       });
     }
 
     const files = req.files;
     const productData = req.body;
     
-    // Validate required fields
-    const requiredFields = [
-      "name",
-     "sd",
-     "faq",
-      "description",
-      
-      "category",
-   
-      "utility",
-      "care",
-      "price",
-      "advanceprice",
-      "terms",
-      "regularprice",
-      "adultprice",
-      "childprice",
-      "weekendprice"
-    ];
-
-    console.log('Validating required fields...');
-    const missingFields = [];
-    for (const field of requiredFields) {
-      if (!productData[field]) {
-        missingFields.push(field);
-        console.log(`Missing required field: ${field}`);
-      }
-    }
+    const requiredFields = ["name", "sd", "faq", "description", "category", "utility", "care", "price", "advanceprice", "terms", "regularprice", "adultprice", "childprice", "weekendprice"];
+    const missingFields = requiredFields.filter(field => !productData[field]);
 
     if (missingFields.length > 0) {
-      console.log('Error: Missing required fields:', missingFields);
       return res.status(400).json({ error: `Missing required fields: ${missingFields.join(', ')}` });
     }
 
-    // Process uploaded files
     console.log('Processing uploaded files...');
     const imagePaths = [];
     
-    // Main image
+    // 1. Add Main image (sent as 'mainImage')
     if (files.mainImage && files.mainImage[0]) {
       const mainImageUrl = files.mainImage[0].path; // Cloudinary URL
       imagePaths.push(mainImageUrl);
       console.log('Added main image:', mainImageUrl);
     }
 
-    // Additional images
-    for (let i = 1; i <= 3; i++) {
-      if (files[`image${i}`] && files[`image${i}`][0]) {
-        const imageUrl = files[`image${i}`][0].path; // Cloudinary URL
-        imagePaths.push(imageUrl);
-        console.log(`Added image${i}:`, imageUrl);
-      }
+    // 2. Add Additional images (sent as an array named 'images')
+    if (files.images && files.images.length > 0) {
+      files.images.forEach(file => {
+        imagePaths.push(file.path);
+        console.log('Added additional image:', file.path);
+      });
     }
 
-    // 👇 Process uploaded videos
+    // 3. Process uploaded videos
     const videoPaths = files.videos ? files.videos.map(video => video.path) : [];
     console.log('Added videos:', videoPaths);
 
@@ -139,50 +107,46 @@ const createProductWithFiles = async (req, res) => {
       description: productData.description,
       size: productData.size,
       colour: productData.colour,
-      sd:productData.sd,
-       faq:productData.faq,
+      sd: productData.sd,
+      faq: productData.faq,
       category: productData.category,
       weight: productData.weight,
-      weekendadvance:productData.weekendadvance,
+      weekendadvance: productData.weekendadvance,
       utility: productData.utility,
       care: productData.care,
       advanceprice: parseFloat(productData.advanceprice),
       terms: productData.terms,
       price: parseFloat(productData.price),
       regularprice: parseFloat(productData.regularprice),
-            adultprice: parseFloat(productData.adultprice),
-                childprice: parseFloat(productData.childprice),
+      adultprice: parseFloat(productData.adultprice),
+      childprice: parseFloat(productData.childprice),
       weekendprice: productData.weekendprice ? parseFloat(productData.weekendprice) : undefined,
-      maplink: productData.maplink, // <-- ADDED
-      waternumber: productData.waternumber, // <-- ADDED
-      image: imagePaths[0], // Main image Cloudinary URL
-      images: imagePaths, // All Cloudinary URLs
+      maplink: productData.maplink,
+      waternumber: productData.waternumber,
+      image: imagePaths[0], // Main image is the first in the array
+      images: imagePaths,  // Full array of all image URLs
+      videos: videoPaths,
       inStock: productData.inStock === 'true' || productData.inStock === true,
       isBestSeller: productData.isBestSeller === 'true' || productData.isBestSeller === true,
       isFeatured: productData.isFeatured === 'true' || productData.isFeatured === true,
       isMostLoved: productData.isMostLoved === 'true' || productData.isMostLoved === true,
       codAvailable: productData.codAvailable === 'false' ? false : true,
       stock: typeof productData.stock !== 'undefined' ? Number(productData.stock) : 10,
-        videos: videoPaths,
     });
     
     console.log('Saving product to database...');
     const savedProduct = await newProduct.save();
-    console.log('Product saved successfully:', savedProduct);
+    console.log('Product saved successfully.');
     
     res.status(201).json({ 
       message: "Product created successfully", 
       product: savedProduct,
-      uploadedFiles: files
     });
   } catch (error) {
-    console.error('=== Error creating product ===');
-    console.error('Error details:', error);
-    console.error('Stack trace:', error.stack);
+    console.error('=== Error creating product ===', error);
     res.status(500).json({ 
       message: "Error creating product", 
       error: error.message,
-      details: error.stack
     });
   }
 };
@@ -190,8 +154,9 @@ const createProductWithFiles = async (req, res) => {
 // Update product with file upload
 const updateProductWithFiles = async (req, res) => {
   try {
-    console.log('Updating product with files:', req.files);
-    console.log('Update data:', req.body);
+    console.log('=== Starting Product Update ===');
+    console.log('Files received:', req.files);
+    console.log('Body data:', req.body);
 
     const id = req.params.id;
     const files = req.files || {};
@@ -202,56 +167,42 @@ const updateProductWithFiles = async (req, res) => {
       return res.status(404).json({ message: "Product not found" });
     }
 
-    // Initialize imagePaths with existing images
-    let imagePaths = existingProduct.images || [];
-    if (!Array.isArray(imagePaths)) {
-      // If images is not an array, initialize it with the main image if it exists
-      imagePaths = existingProduct.image ? [existingProduct.image] : [];
-    }
+    // 1. Get the list of existing images to keep from the frontend
+    // The frontend sends this as a JSON string array.
+    const retainedUrls = JSON.parse(productData.retainedUrls || '[]');
+    console.log('Retained image URLs:', retainedUrls);
 
-    // Handle main image update
+    // 2. Get URLs of newly uploaded files
+    const newImageUrls = [];
     if (files.mainImage && files.mainImage[0]) {
-      const mainImageUrl = files.mainImage[0].path;
-      if (imagePaths.length === 0) {
-        imagePaths.push(mainImageUrl);
-      } else {
-        imagePaths[0] = mainImageUrl;
-      }
+      newImageUrls.push(files.mainImage[0].path);
+      console.log('Added new main image:', files.mainImage[0].path);
+    }
+    if (files.images && files.images.length > 0) {
+      files.images.forEach(file => {
+        newImageUrls.push(file.path);
+        console.log('Added new additional image:', file.path);
+      });
     }
 
-    // Handle additional images
-    for (let i = 1; i <= 3; i++) {
-      if (files[`image${i}`] && files[`image${i}`][0]) {
-        const imageUrl = files[`image${i}`][0].path;
-        if (i < imagePaths.length) {
-          imagePaths[i] = imageUrl;
-        } else {
-          imagePaths.push(imageUrl);
-        }
-      }
-    }
-
-    // Ensure we have at least one image
-    if (imagePaths.length === 0 && existingProduct.image) {
-      imagePaths.push(existingProduct.image);
-    }
-    // 👇 Handle video updates
-    // Start with existing videos and add any new ones.
+    // 3. Combine retained and new URLs to form the final image array
+    const finalImagePaths = [...retainedUrls, ...newImageUrls];
+    console.log('Final image array for update:', finalImagePaths);
+    
+    // 4. Handle video updates (additive approach)
     let videoPaths = existingProduct.videos || [];
     if (files.videos && files.videos.length > 0) {
         const newVideoUrls = files.videos.map(video => video.path);
-        videoPaths = videoPaths.concat(newVideoUrls); // Appends new videos to the existing list
+        videoPaths = videoPaths.concat(newVideoUrls);
         console.log('Updated video paths:', videoPaths);
     }
 
-
-    // Update product object
     const updatedProduct = {
       name: productData.name || existingProduct.name,
       material: productData.material || existingProduct.material,
       description: productData.description || existingProduct.description,
-        sd:productData.sd || existingProduct.sd,
-           faq:productData.faq || existingProduct.faq,
+      sd: productData.sd || existingProduct.sd,
+      faq: productData.faq || existingProduct.faq,
       size: productData.size || existingProduct.size,
       colour: productData.colour || existingProduct.colour,
       category: productData.category || existingProduct.category,
@@ -263,13 +214,13 @@ const updateProductWithFiles = async (req, res) => {
       price: productData.price ? parseFloat(productData.price) : existingProduct.price,
       regularprice: productData.regularprice ? parseFloat(productData.regularprice) : existingProduct.regularprice,
       weekendadvance: productData.weekendadvance ? parseFloat(productData.weekendadvance) : existingProduct.weekendadvance,
-    adultprice: productData.adultprice ? parseFloat(productData.adultprice) : existingProduct.adultprice,
-      childprice: productData.childprice ? parseFloat(productData.childprice) : existingProduct,
+      adultprice: productData.adultprice ? parseFloat(productData.adultprice) : existingProduct.adultprice,
+      childprice: productData.childprice ? parseFloat(productData.childprice) : existingProduct.childprice,
       weekendprice: productData.weekendprice ? parseFloat(productData.weekendprice) : existingProduct.weekendprice,
-      maplink: productData.maplink || existingProduct.maplink, // <-- ADDED
-      waternumber: productData.waternumber || existingProduct.waternumber, // <-- ADDED
-      image: imagePaths[0],
-      images: imagePaths,
+      maplink: productData.maplink || existingProduct.maplink,
+      waternumber: productData.waternumber || existingProduct.waternumber,
+      image: finalImagePaths[0] || null, // The first image is the main image
+      images: finalImagePaths,
       videos: videoPaths,
       inStock: productData.inStock !== undefined ? (productData.inStock === 'true' || productData.inStock === true) : existingProduct.inStock,
       isBestSeller: productData.isBestSeller !== undefined ? (productData.isBestSeller === 'true' || productData.isBestSeller === true) : existingProduct.isBestSeller,
@@ -290,65 +241,38 @@ const updateProductWithFiles = async (req, res) => {
 // Update product section flags
 const updateProductSections = async (req, res) => {
   try {
-    console.log('=== Starting Section Update ===');
-    console.log('Product ID:', req.params.id);
-    console.log('Update data:', req.body);
-
     const { id } = req.params;
     const { isBestSeller, isFeatured, isMostLoved } = req.body;
 
-    // Validate that at least one section flag is provided
     if (isBestSeller === undefined && isFeatured === undefined && isMostLoved === undefined) {
-      console.log('Error: No section flags provided');
       return res.status(400).json({ message: "At least one section flag must be provided" });
     }
 
-    // Find the product
     const product = await Product.findById(id);
     if (!product) {
-      console.log('Error: Product not found');
       return res.status(404).json({ message: "Product not found" });
     }
 
-    console.log('Current product sections:', {
-      isBestSeller: product.isBestSeller,
-      isFeatured: product.isFeatured,
-      isMostLoved: product.isMostLoved
-    });
-
-    // Build update object with only the provided flags
     const updates = {};
     if (isBestSeller !== undefined) updates.isBestSeller = isBestSeller;
     if (isFeatured !== undefined) updates.isFeatured = isFeatured;
     if (isMostLoved !== undefined) updates.isMostLoved = isMostLoved;
 
-    console.log('Applying updates:', updates);
-
-    // Update the product with new section flags
     const updatedProduct = await Product.findByIdAndUpdate(
       id,
       { $set: updates },
       { new: true, runValidators: true }
     );
 
-    console.log('Updated product sections:', {
-      isBestSeller: updatedProduct.isBestSeller,
-      isFeatured: updatedProduct.isFeatured,
-      isMostLoved: updatedProduct.isMostLoved
-    });
-
     res.json({
       message: "Product sections updated successfully",
       product: updatedProduct
     });
   } catch (error) {
-    console.error('=== Error Updating Sections ===');
-    console.error('Error details:', error);
-    console.error('Stack trace:', error.stack);
+    console.error('Error Updating Sections:', error);
     res.status(500).json({ 
       message: "Error updating product sections", 
       error: error.message,
-      details: error.stack
     });
   }
 };

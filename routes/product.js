@@ -1,75 +1,54 @@
-
-// File: admin/backend/routes/products.js
 const express = require("express");
 const router = express.Router();
-const multer = require('multer');
-const { CloudinaryStorage } = require('multer-storage-cloudinary');
+const multer = require("multer");
 const cloudinary = require('cloudinary').v2;
+const { CloudinaryStorage } = require('multer-storage-cloudinary');
 const { isAdmin, authenticateToken } = require('../middleware/auth');
-const {
-  getAllProducts,
-  getProduct,
-  createProductWithFiles,
-  updateProductWithFiles,
-  updateProductSections,
+const { 
+  getAllProducts, 
+  getProduct, 
+  createProductWithFiles, 
+  updateProductWithFiles, 
   deleteProduct,
-  getProductsBySection
+  getProductsBySection,
+  updateProductSections
 } = require('../controllers/productController');
 
-// Configure Cloudinary
+// Cloudinary config
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
   api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET
+  api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-// Configure storage
 const storage = new CloudinaryStorage({
   cloudinary: cloudinary,
   params: {
     folder: 'products',
-    allowed_formats: ['jpg', 'jpeg', 'png', 'webp'],
-    transformation: [{ width: 800, height: 800, crop: 'limit' }],
-    resource_type: 'auto'
-  }
+    resource_type: 'auto',
+    allowed_formats: ['jpg', 'jpeg', 'png', 'webp', 'mp4', 'mov', 'avi'],
+  },
 });
 
-// Configure multer
-const upload = multer({
-  storage: storage,
-  limits: {
-    fileSize: 10 * 1024 * 1024 // 10MB limit
-  }
-});
+const upload = multer({ storage: storage });
 
-// Configure multiple file upload fields
-const uploadFields = upload.fields([
+// ✅ THIS IS THE CORRECT CONFIGURATION
+const uploadHandler = upload.fields([
   { name: 'mainImage', maxCount: 1 },
-  { name: 'image1', maxCount: 1 },
-  { name: 'image2', maxCount: 1 },
-  { name: 'image3', maxCount: 1 }
+  { name: 'images', maxCount: 9 },      // Expects an array named 'images'
+  { name: 'videos', maxCount: 5 }
 ]);
 
-// Middleware to handle multer upload
-const handleUpload = (req, res, next) => {
-  uploadFields(req, res, function(err) {
-    if (err instanceof multer.MulterError) {
-      return res.status(400).json({ error: 'File upload error', details: err.message });
-    } else if (err) {
-      return res.status(500).json({ error: 'File upload error', details: err.message });
-    }
-    next();
-  });
-};
+// --- ROUTES ---
 
 // Public routes
 router.get("/", getAllProducts);
 router.get("/section/:section", getProductsBySection);
 router.get("/:id", getProduct);
 
-// Admin routes
-router.post("/", authenticateToken, isAdmin, handleUpload, createProductWithFiles);
-router.put("/:id", authenticateToken, isAdmin, handleUpload, updateProductWithFiles);
+// Admin routes (Protected)
+router.post("/", authenticateToken, isAdmin, uploadHandler, createProductWithFiles);
+router.put("/:id", authenticateToken, isAdmin, uploadHandler, updateProductWithFiles);
 router.patch("/:id/sections", authenticateToken, isAdmin, updateProductSections);
 router.delete("/:id", authenticateToken, isAdmin, deleteProduct);
 
