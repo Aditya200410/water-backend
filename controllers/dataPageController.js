@@ -64,87 +64,81 @@ exports.initializePolicies = async (req, res) => {
   try {
     console.log('Initializing default policies...');
     
-    const defaultPolicies = [
-      {
-        type: 'terms',
-        heading: 'Terms and Conditions',
-        content: `Terms and Conditions:
-Welcome to RikoCraft. By accessing our website, you agree to these terms and conditions.
+     const defaultPolicies = [
+  {
+    _id: { $oid: "68b2aefd826e06e00bf57a2c" },
+    type: "terms",
+    heading: "Terms and Conditions",
+    content: `Terms and Conditions:
+Welcome to Water Park chalo. By accessing our website or purchasing a ticket, you agree to these terms and conditions.
 
 Acceptance of Terms:
 By using our services, you acknowledge that you have read, understood, and agree to be bound by these terms.
 
-User Accounts:
-You are responsible for maintaining the confidentiality of your account information and for all activities under your account.
-
-Product Information:
-We strive to provide accurate product descriptions, but we do not warrant that product descriptions are accurate, complete, or current.
+Park Information & Hours:
+We strive to provide accurate information on park hours and ride availability, but these are subject to change without notice due to maintenance or weather.
 
 Pricing and Payment:
-All prices are subject to change without notice. Payment must be made at the time of order placement.
+All ticket prices are subject to change without notice. Payment must be made in full at the time of ticket purchase.
 
-Shipping and Delivery:
-Delivery times are estimates only. We are not responsible for delays beyond our control.
+Cancellations and Refunds:
+Please refer to our Cancellation & Refund Policy for detailed information.
 
-Returns and Refunds:
-Please refer to our Refund Policy for detailed information about returns and refunds.
+Park Rules & Regulations:
+All guests must comply with posted safety rules and instructions from park staff. Failure to do so may result in removal from the park without a refund.
+
+Assumption of Risk & Liability:
+By entering the park, guests assume all inherent risks associated with water park activities. Water Park chalo shall not be liable for any incidental or consequential damages, except in cases of gross negligence.
 
 Intellectual Property:
-All content on this website is protected by copyright and other intellectual property laws.
+All content on this website, including logos and branding, is the property of Water Park chalo and is protected by copyright laws.`,
+    __v: 0,
+    createdAt: { $date: "2025-06-27T15:11:22.774Z" },
+    updatedAt: { $date: "2025-08-30T07:59:07.597Z" },
+  },
+  {
+    _id: { $oid: "68b2aeec826e06e00bf57a28" },
+    type: "refund",
+    heading: "Cancellation & Refund Policy",
+    content: `Cancellation & Refund Policy:
+We want you to have a fantastic and safe time at Water Park chalo.
 
-Limitation of Liability:
-We shall not be liable for any indirect, incidental, or consequential damages.
+Ticket Cancellation & Refunds:
+Tickets cancelled at least 48 hours before the scheduled visit date are eligible for a full refund. Cancellations made within 48 hours of the visit date are non-refundable.
 
-Governing Law:
-These terms are governed by the laws of India.`
-      },
-      {
-        type: 'refund',
-        heading: 'Refund Policy',
-        content: `Refund Policy:
-We want you to be completely satisfied with your purchase from RikoCraft.
-
-Eligibility for Refunds:
-Items must be returned within 30 days of delivery in their original condition.
-
-Return Process:
-Contact our customer service team to initiate a return. Provide your order number and reason for return.
-
-Return Shipping:
-Customers are responsible for return shipping costs unless the item is defective or incorrect.
+Rescheduling Your Visit:
+You may reschedule your tickets for a different date, subject to availability, if the request is made at least 24 hours before your original visit time. A rescheduling fee may apply.
 
 Refund Timeline:
-Refunds are processed within 5-7 business days after we receive your return.
+Refunds are processed within 5-7 business days and credited to the original payment method.
 
-Non-Refundable Items:
-Custom or personalized items cannot be returned unless defective.
+Park Closures & Inclement Weather:
+If we close the park due to severe weather or unforeseen circumstances, you will be offered a full refund or the option to reschedule your visit at no extra cost.
 
-Damaged Items:
-If you receive a damaged item, contact us immediately with photos for replacement or refund.
-
-Quality Issues:
-We stand behind the quality of our products. Contact us for any quality concerns.
+Guest Conduct & Safety:
+Guests removed from the park for violating safety rules or park policies will not be eligible for a refund.
 
 Refund Methods:
-Refunds are issued to the original payment method used for the purchase.
-
-International Returns:
-International customers may be subject to additional shipping and customs fees.
+Refunds are issued to the original payment method used for the ticket purchase.
 
 Contact Information:
-For return inquiries, email us at support@rikocraft.com or call our customer service.`
-      },
-      {
-        type: 'privacy',
-        heading: 'Privacy Policy',
-        content: `Privacy Policy:
-Your privacy is important to us. This policy explains how we collect, use, and protect your information.
+For cancellation or rescheduling inquiries, email us at wpc@waterparkchalo.com or call our guest services.`,
+    __v: 0,
+    createdAt: { $date: "2025-06-27T15:11:22.774Z" },
+    updatedAt: { $date: "2025-08-30T07:59:53.334Z" },
+  },
+  {
+    _id: { $oid: "68b2aef5826e06e00bf57a2a" },
+    type: "privacy",
+    heading: "Privacy Policy",
+    content: `Privacy Policy:
+Your privacy is important to us. This policy explains how Water Park chalo collects, uses, and protects your information.
 
 Information We Collect:
-We collect information you provide directly to us, such as name, email, address, and payment information.
+We collect information you provide when purchasing tickets or season passes, such as name, email, address, and payment information.
 
 How We Use Information:
-We use your information to process orders, communicate with you, and improve our services.
+We use your information to process ticket bookings, communicate with you about your visit, and improve our park services.
 
 Information Sharing:
 We do not sell, trade, or rent your personal information to third parties.
@@ -153,24 +147,27 @@ Data Security:
 We implement appropriate security measures to protect your personal information.
 
 Cookies and Tracking:
-We use cookies to enhance your browsing experience and analyze website traffic.
+We use cookies to enhance your browsing experience on our website and analyze traffic to improve our offerings.
 
 Third-Party Services:
-We may use third-party services for payment processing and analytics.
+We may use third-party services for secure payment processing and website analytics.
 
 Data Retention:
 We retain your information as long as necessary to provide our services and comply with legal obligations.
 
 Your Rights:
-You have the right to access, update, or delete your personal information.
+You have the right to access, update, or delete your personal information by contacting us.
 
 Children's Privacy:
-Our services are not intended for children under 13 years of age.
+Our online booking services are not intended for children under 13. A parent or guardian must provide consent and information for any minor.
 
 Changes to Policy:
-We may update this privacy policy from time to time.`
-      }
-    ];
+We may update this privacy policy from time to time.`,
+    __v: 0,
+    createdAt: { $date: "2025-06-27T15:11:22.775Z" },
+    updatedAt: { $date: "2025-08-30T08:00:11.174Z" },
+  },
+];
 
     // Check if policies already exist
     const existingPolicies = await DataPage.find();
