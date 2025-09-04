@@ -30,7 +30,7 @@ async function sendWhatsAppMessage(order) {
     console.log("📦 [WhatsApp] Sending message with:", normalized);
    
 
-    // Send request
+    // Send request with timeout
     const response = await axios.post(
       `${process.env.RB_DIGITAL_BASE_URL}/v2/whatsapp-business/messages`,
       {
@@ -54,6 +54,7 @@ async function sendWhatsAppMessage(order) {
           "Content-Type": "application/json",
           Authorization: `Bearer ${process.env.RB_DIGITAL_TOKEN}`,
         },
+        timeout: 10000, // 10 second timeout
       }
     );
 

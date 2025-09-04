@@ -81,7 +81,14 @@ const sendEmail = async (to, subject, html, textFallback) => {
 
   try {
     console.log("[sendEmail] Sending email with options:", mailOptions);
-    await transporter.sendMail(mailOptions);
+    
+    // Add timeout to email sending
+    const emailPromise = transporter.sendMail(mailOptions);
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('Email timeout')), 15000)
+    );
+    
+    await Promise.race([emailPromise, timeoutPromise]);
     console.log("[sendEmail] Email sent successfully.");
   } catch (error) {
     console.error("[sendEmail] Error sending email:", error);
@@ -224,39 +231,43 @@ console.log("[createBooking] Generating custom booking ID for:", waterparkName);
 
     if (paymentType === "cash") {
         console.log(
-            "[createBooking] Cash payment flow, sending WhatsApp notification."
+            "[createBooking] Cash payment flow, sending notifications in parallel."
         );
       
-        console.log("[createBooking] Sending WhatsApp confirmation to: self");
-        await selfWhatsAppMessage({
-          id: booking.waterpark.toString(),
-          waterparkName: booking.waterparkName,
-          customBookingId:booking.customBookingId,
-          customerName: booking.name,
-          customerPhone: booking.phone,
-          date: booking.date,
-          adultquantity: booking.adults,
-          childquantity: booking.children,
-          totalAmount: booking.totalAmount,
-          left: booking.leftamount,
-        });
-        console.log("[createBooking] Self WhatsApp confirmation sent.");
+        // Send all notifications in parallel for faster response
+        const notificationPromises = [
+          selfWhatsAppMessage({
+            id: booking.waterpark.toString(),
+            waterparkName: booking.waterparkName,
+            customBookingId: booking.customBookingId,
+            customerName: booking.name,
+            customerPhone: booking.phone,
+            date: booking.date,
+            adultquantity: booking.adults,
+            childquantity: booking.children,
+            totalAmount: booking.totalAmount,
+            left: booking.leftamount,
+          }).catch(err => console.error("[createBooking] Self WhatsApp error:", err.message)),
 
-        await parkWhatsAppMessage({
-          id: booking.waterpark.toString(),
-          waterparkName: booking.waterparkName,
-          customBookingId:booking.customBookingId,
-          customerName: booking.name,
+          parkWhatsAppMessage({
+            id: booking.waterpark.toString(),
+            waterparkName: booking.waterparkName,
+            customBookingId: booking.customBookingId,
+            customerName: booking.name,
+            waternumber: booking.waternumber,
+            customerPhone: booking.phone,
+            date: booking.date,
+            adultquantity: booking.adults,
+            childquantity: booking.children,
+            totalAmount: booking.totalAmount,
+            left: booking.leftamount,
+          }).catch(err => console.error("[createBooking] Park WhatsApp error:", err.message))
+        ];
 
-          waternumber :booking.waternumber,
-          customerPhone: booking.phone,
-          date: booking.date,
-          adultquantity: booking.adults,
-          childquantity: booking.children,
-          totalAmount: booking.totalAmount,
-          left: booking.leftamount,
+        // Don't wait for notifications to complete - respond immediately
+        Promise.allSettled(notificationPromises).then(results => {
+          console.log("[createBooking] All notifications completed:", results.map(r => r.status));
         });
-        console.log("[createBooking] Park WhatsApp confirmation sent.");
 
         return res
             .status(201)
@@ -388,39 +399,45 @@ exports.verifyPayment = async (req, res) => {
       booking.customBookingId
     );
 
-    // ✅ Send WhatsApp messages after successful payment verification
-    console.log("[verifyPayment] Sending WhatsApp confirmations...");
-    
-    await sendWhatsAppMessage({
-        id: booking.waterpark.toString(),
-        waterparkName: booking.waterparkName,
-        customBookingId:booking.customBookingId,
-        customerName: booking.name,
-        customerPhone: booking.phone,
-        date: booking.date,
-        adultquantity: booking.adults,
-        childquantity: booking.children,
-        totalAmount: booking.totalAmount,
-        left: booking.leftamount,
-    });
-    
-    await selfWhatsAppMessage({
-        id: booking.waterpark.toString(),
-        waterparkName: booking.waterparkName,
-        customBookingId:booking.customBookingId,
-        customerName: booking.name,
-        customerPhone: booking.phone,
-        date: booking.date,
-        adultquantity: booking.adults,
-        childquantity: booking.children,
-        totalAmount: booking.totalAmount,
-        left: booking.leftamount,
-    });
+    // ✅ Use the readable customBookingId for the frontend URL
+    const frontendUrl = `https://waterparkchalo.com/ticket?bookingId=${booking.customBookingId}`;
+    console.log("[verifyPayment] Ticket URL:", frontendUrl);
 
-    await parkWhatsAppMessage({
+    // ✅ Send all notifications in parallel for faster response
+    console.log("[verifyPayment] Sending notifications in parallel...");
+    
+    const notificationPromises = [
+      // WhatsApp messages
+      sendWhatsAppMessage({
         id: booking.waterpark.toString(),
         waterparkName: booking.waterparkName,
-        customBookingId:booking.customBookingId,
+        customBookingId: booking.customBookingId,
+        customerName: booking.name,
+        customerPhone: booking.phone,
+        date: booking.date,
+        adultquantity: booking.adults,
+        childquantity: booking.children,
+        totalAmount: booking.totalAmount,
+        left: booking.leftamount,
+      }).catch(err => console.error("[verifyPayment] Customer WhatsApp error:", err.message)),
+      
+      selfWhatsAppMessage({
+        id: booking.waterpark.toString(),
+        waterparkName: booking.waterparkName,
+        customBookingId: booking.customBookingId,
+        customerName: booking.name,
+        customerPhone: booking.phone,
+        date: booking.date,
+        adultquantity: booking.adults,
+        childquantity: booking.children,
+        totalAmount: booking.totalAmount,
+        left: booking.leftamount,
+      }).catch(err => console.error("[verifyPayment] Self WhatsApp error:", err.message)),
+
+      parkWhatsAppMessage({
+        id: booking.waterpark.toString(),
+        waterparkName: booking.waterparkName,
+        customBookingId: booking.customBookingId,
         customerName: booking.name,
         waternumber: booking.waternumber,
         customerPhone: booking.phone,
@@ -429,115 +446,114 @@ exports.verifyPayment = async (req, res) => {
         childquantity: booking.children,
         totalAmount: booking.totalAmount,
         left: booking.leftamount,
-    });
-    console.log("[verifyPayment] All WhatsApp confirmations sent.");
+      }).catch(err => console.error("[verifyPayment] Park WhatsApp error:", err.message)),
 
-    // ✅ Use the readable customBookingId for the frontend URL
-const frontendUrl = `https://waterparkchalo.com/ticket?bookingId=${booking.customBookingId}`;
-    console.log("[verifyPayment] Ticket URL:", frontendUrl);
-
-    // ✅ MODIFICATION: Use the new customBookingId in the email for a better user experience
-    await sendEmail(
-      [booking.email, "am542062@gmail.com"],
-      `Payment Confirmation for ${booking.waterparkName}`,
-      `
-      <html>
-        <body style="font-family: Arial, sans-serif; background:#f9fafb; padding:20px; color:#333;">
-          <div style="max-width:600px; margin:0 auto; background:white; border-radius:10px; padding:20px; border:1px solid #ddd;">
-            
-            <div style="text-align:center; margin-bottom:20px;">
-              <h2 style="color:#1d4ed8; font-size:28px; margin:0;">${
-                booking.waterparkName
-              }</h2>
-              <p style="color:#555; font-style:italic;">"Splash • Chill • Fun"</p>
-            </div>
-    
-            <table width="100%" style="border-top:1px dashed #60a5fa; padding-top:15px; font-size:14px;">
-              <tr>
-                <td>
-                  <p style="margin:0; color:#666; font-size:12px;">Booking ID</p>
-                  <p style="margin:0; font-family:monospace; color:#1d4ed8; font-weight:bold;">${
-                    booking.customBookingId // <-- Use customBookingId here
-                  }</p>
-                </td>
-                <td style="text-align:right;">
-                  <p style="margin:0; color:#666; font-size:12px;">Visit Date</p>
-                  <p style="margin:0; font-weight:bold; color:#111;">
-                    ${new Date(booking.date).toLocaleDateString()}
-                  </p>
-                </td>
-              </tr>
-              <tr>
-                <td>
-                  <p style="margin:0; color:#666; font-size:12px;">Name</p>
-                  <p style="margin:0; font-weight:600; color:#111;">${
-                    booking.name
-                  }</p>
-                </td>
-                <td style="text-align:right;">
-                  <p style="margin:0; color:#666; font-size:12px;">Phone</p>
-                  <p style="margin:0; font-weight:600; color:#111;">${
-                    booking.phone
-                  }</p>
-                </td>
-              </tr>
-            </table>
-    
-            <hr style="border:0; border-top:2px dotted #60a5fa; margin:20px 0;">
-    
-            <table width="100%" style="font-size:14px;">
-              <tr>
-                <td>
-                  <p style="margin:0; color:#666; font-size:12px;">Adults</p>
-                  <p style="margin:0; font-weight:bold; color:#1d4ed8;">${
-                    booking.adults
-                  }</p>
-                </td>
-                <td style="text-align:right;">
-                  <p style="margin:0; color:#666; font-size:12px;">Children</p>
-                  <p style="margin:0; font-weight:bold; color:#db2777;">${
-                    booking.children
-                  }</p>
-                </td>
-              </tr>
-            </table>
-    
-            <table width="100%" style="border-top:1px dashed #60a5fa; padding-top:15px; font-size:14px; margin-top:15px;">
-              <tr>
-                <td>
-                  <p style="margin:0; color:#666; font-size:12px;">Advance Paid</p>
-                  <p style="margin:0; font-weight:600; color:#16a34a;">₹${
-                    booking.advanceAmount
-                  }</p>
-                </td>
-                <td style="text-align:right;">
-                  <p style="margin:0; color:#666; font-size:12px;">Total Amount</p>
-                  <p style="margin:0; font-size:20px; font-weight:800; color:#be185d;">₹${
-                    booking.totalAmount
-                  }</p>
-                </td>
+      // Email
+      sendEmail(
+        [booking.email, "am542062@gmail.com"],
+        `Payment Confirmation for ${booking.waterparkName}`,
+        `
+        <html>
+          <body style="font-family: Arial, sans-serif; background:#f9fafb; padding:20px; color:#333;">
+            <div style="max-width:600px; margin:0 auto; background:white; border-radius:10px; padding:20px; border:1px solid #ddd;">
+              
+              <div style="text-align:center; margin-bottom:20px;">
+                <h2 style="color:#1d4ed8; font-size:28px; margin:0;">${
+                  booking.waterparkName
+                }</h2>
+                <p style="color:#555; font-style:italic;">"Splash • Chill • Fun"</p>
+              </div>
+      
+              <table width="100%" style="border-top:1px dashed #60a5fa; padding-top:15px; font-size:14px;">
+                <tr>
+                  <td>
+                    <p style="margin:0; color:#666; font-size:12px;">Booking ID</p>
+                    <p style="margin:0; font-family:monospace; color:#1d4ed8; font-weight:bold;">${
+                      booking.customBookingId
+                    }</p>
+                  </td>
                   <td style="text-align:right;">
-                  <p style="margin:0; color:#666; font-size:12px;">Left Amount</p>
-                  <p style="margin:0; font-size:20px; font-weight:800; color:#be185d;">₹${
-                    booking.leftamount
-                  }</p>
-                </td>
-              </tr>
-            </table>
-    
-            <div style="text-align:center; margin-top:30px; font-size:13px; color:#666;">
-              <p>Thank you for booking with <strong>${
-                booking.waterparkName
-              }</strong>!</p>
-              <p>We look forward to your visit.</p>
+                    <p style="margin:0; color:#666; font-size:12px;">Visit Date</p>
+                    <p style="margin:0; font-weight:bold; color:#111;">
+                      ${new Date(booking.date).toLocaleDateString()}
+                    </p>
+                  </td>
+                </tr>
+                <tr>
+                  <td>
+                    <p style="margin:0; color:#666; font-size:12px;">Name</p>
+                    <p style="margin:0; font-weight:600; color:#111;">${
+                      booking.name
+                    }</p>
+                  </td>
+                  <td style="text-align:right;">
+                    <p style="margin:0; color:#666; font-size:12px;">Phone</p>
+                    <p style="margin:0; font-weight:600; color:#111;">${
+                      booking.phone
+                    }</p>
+                  </td>
+                </tr>
+              </table>
+      
+              <hr style="border:0; border-top:2px dotted #60a5fa; margin:20px 0;">
+      
+              <table width="100%" style="font-size:14px;">
+                <tr>
+                  <td>
+                    <p style="margin:0; color:#666; font-size:12px;">Adults</p>
+                    <p style="margin:0; font-weight:bold; color:#1d4ed8;">${
+                      booking.adults
+                    }</p>
+                  </td>
+                  <td style="text-align:right;">
+                    <p style="margin:0; color:#666; font-size:12px;">Children</p>
+                    <p style="margin:0; font-weight:bold; color:#db2777;">${
+                      booking.children
+                    }</p>
+                  </td>
+                </tr>
+              </table>
+      
+              <table width="100%" style="border-top:1px dashed #60a5fa; padding-top:15px; font-size:14px; margin-top:15px;">
+                <tr>
+                  <td>
+                    <p style="margin:0; color:#666; font-size:12px;">Advance Paid</p>
+                    <p style="margin:0; font-weight:600; color:#16a34a;">₹${
+                      booking.advanceAmount
+                    }</p>
+                  </td>
+                  <td style="text-align:right;">
+                    <p style="margin:0; color:#666; font-size:12px;">Total Amount</p>
+                    <p style="margin:0; font-size:20px; font-weight:800; color:#be185d;">₹${
+                      booking.totalAmount
+                    }</p>
+                  </td>
+                    <td style="text-align:right;">
+                    <p style="margin:0; color:#666; font-size:12px;">Left Amount</p>
+                    <p style="margin:0; font-size:20px; font-weight:800; color:#be185d;">₹${
+                      booking.leftamount
+                    }</p>
+                  </td>
+                </tr>
+              </table>
+      
+              <div style="text-align:center; margin-top:30px; font-size:13px; color:#666;">
+                <p>Thank you for booking with <strong>${
+                  booking.waterparkName
+                }</strong>!</p>
+                <p>We look forward to your visit.</p>
+              </div>
             </div>
-          </div>
-        </body>
-      </html>
-      `
-    );
+          </body>
+        </html>
+        `
+      ).catch(err => console.error("[verifyPayment] Email error:", err.message))
+    ];
 
-    console.log("[verifyPayment] Confirmation email sent.");
+    // Don't wait for notifications to complete - respond immediately
+    Promise.allSettled(notificationPromises).then(results => {
+      console.log("[verifyPayment] All notifications completed:", results.map(r => r.status));
+    });
 
     const shouldRedirect =
       typeof redirect === "string"
