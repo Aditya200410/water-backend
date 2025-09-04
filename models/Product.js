@@ -35,6 +35,19 @@ const productSchema = new mongoose.Schema({
   codAvailable: { type: Boolean, default: true },
   date: { type: Date, default: Date.now },
   videos: [{ type: String }],
+  specialPrices: {
+    type: Map,
+    of: {
+      price: Number,           // weekend child price
+      regularprice: Number,    // regular price
+      advanceprice: Number,    // advance price
+      adultprice: Number,      // adult price
+      childprice: Number,      // child price
+      weekendprice: Number,    // weekend adult price
+      weekendadvance: Number   // weekend advance price
+    },
+    default: new Map()
+  },
 });
 
 // Create and export the Product model

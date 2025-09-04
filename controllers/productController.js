@@ -72,6 +72,22 @@ const createProductWithFiles = async (req, res) => {
     const files = req.files;
     const productData = req.body;
     
+    // Parse specialPrices if it exists
+    if (productData.specialPrices) {
+      try {
+        const parsedSpecialPrices = JSON.parse(productData.specialPrices);
+        // Convert to Map for proper storage
+        const specialPricesMap = new Map();
+        Object.entries(parsedSpecialPrices).forEach(([date, prices]) => {
+          specialPricesMap.set(date, prices);
+        });
+        productData.specialPrices = specialPricesMap;
+      } catch (error) {
+        console.error('Error parsing specialPrices:', error);
+        productData.specialPrices = new Map();
+      }
+    }
+    
     const requiredFields = ["name", "sd", "faq", "description", "category", "utility", "care", "price", "advanceprice", "terms", "regularprice", "adultprice", "childprice", "weekendprice"];
     const missingFields = requiredFields.filter(field => !productData[field]);
 
@@ -132,6 +148,7 @@ const createProductWithFiles = async (req, res) => {
       isMostLoved: productData.isMostLoved === 'true' || productData.isMostLoved === true,
       codAvailable: productData.codAvailable === 'false' ? false : true,
       stock: typeof productData.stock !== 'undefined' ? Number(productData.stock) : 10,
+      specialPrices: productData.specialPrices || {},
     });
     
     console.log('Saving product to database...');
@@ -161,6 +178,22 @@ const updateProductWithFiles = async (req, res) => {
     const id = req.params.id;
     const files = req.files || {};
     const productData = req.body;
+
+    // Parse specialPrices if it exists
+    if (productData.specialPrices) {
+      try {
+        const parsedSpecialPrices = JSON.parse(productData.specialPrices);
+        // Convert to Map for proper storage
+        const specialPricesMap = new Map();
+        Object.entries(parsedSpecialPrices).forEach(([date, prices]) => {
+          specialPricesMap.set(date, prices);
+        });
+        productData.specialPrices = specialPricesMap;
+      } catch (error) {
+        console.error('Error parsing specialPrices:', error);
+        productData.specialPrices = new Map();
+      }
+    }
     
     const existingProduct = await Product.findById(id);
     if (!existingProduct) {
@@ -227,7 +260,8 @@ const updateProductWithFiles = async (req, res) => {
       isFeatured: productData.isFeatured !== undefined ? (productData.isFeatured === 'true' || productData.isFeatured === true) : existingProduct.isFeatured,
       isMostLoved: productData.isMostLoved !== undefined ? (productData.isMostLoved === 'true' || productData.isMostLoved === true) : existingProduct.isMostLoved,
       codAvailable: productData.codAvailable === 'false' ? false : true,
-      stock: typeof productData.stock !== 'undefined' ? Number(productData.stock) : existingProduct.stock
+      stock: typeof productData.stock !== 'undefined' ? Number(productData.stock) : existingProduct.stock,
+      specialPrices: productData.specialPrices || existingProduct.specialPrices || new Map()
     };
 
     const result = await Product.findByIdAndUpdate(id, updatedProduct, { new: true });
