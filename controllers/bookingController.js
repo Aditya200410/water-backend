@@ -648,7 +648,7 @@ exports.getAllBookings = async (req, res) => {
   console.log("[getAllBookings] Fetching all bookings...");
   try {
     // ✅ FIX: Changed findOne to find to get an array of all matching bookings
-    const bookings = await Booking.find({ paymentStatus: "completed" });
+    const bookings = await Booking.find({ paymentStatus: "Completed"  });
     
     // Now bookings.length will correctly report the number of documents found
     console.log("[getAllBookings] Total bookings found:", bookings.length);
