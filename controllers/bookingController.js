@@ -592,7 +592,7 @@ exports.getSingleBooking = async (req, res) => {
 
   try {
     const { customBookingId } = req.params;
-     const booking = await Booking.findOne({ customBookingId: customBookingId , paymentStatus: "completed" });
+     const booking = await Booking.findOne({ customBookingId: customBookingId , paymentStatus: "Completed" });
     if (!booking) {
       console.warn("[getSingleBooking] Booking not found:", customBookingId);
       return res
