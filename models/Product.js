@@ -33,6 +33,11 @@ const productSchema = new mongoose.Schema({
   rating: { type: Number, default: 0 },
   reviews: { type: Number, default: 0 },
   codAvailable: { type: Boolean, default: true },
+  paymentType: { 
+    type: String, 
+    enum: ['advance', 'full'], 
+    default: 'advance' 
+  },
   date: { type: Date, default: Date.now },
   videos: [{ type: String }],
   specialPrices: {

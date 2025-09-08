@@ -135,6 +135,7 @@ exports.createBooking = async (req, res) => {
       children,
       advanceAmount,
       paymentType,
+      paymentMethod,
       waterparkName,
       total,
       terms
@@ -212,8 +213,9 @@ console.log("[createBooking] Generating custom booking ID for:", waterparkName);
       advanceAmount: Number(advanceAmount),
       totalAmount,
       leftamount: calculatedLeftAmount,
-      paymentStatus: paymentType === "cash" ? "Pending" : "Initiated",
-      paymentType,
+      paymentStatus: paymentMethod === "cash" ? "Pending" : "Initiated",
+      paymentType, // This is the product's payment type (advance/full)
+      paymentMethod, // This is the payment method (razorpay/cash)
       bookingDate: new Date(),
       terms
     };

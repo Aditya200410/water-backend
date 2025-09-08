@@ -15,7 +15,8 @@ const bookingSchema = new mongoose.Schema({
   }, 
   waterpark: { type: mongoose.Schema.Types.ObjectId, ref: "Waterpark" },
   waterparkName: String,
-  paymentType: String,
+  paymentType: String, // Product payment type: 'advance' or 'full'
+  paymentMethod: String, // Payment method: 'razorpay', 'cash', etc.
   name: { type: String, required: true }, // Ensure name is required
   email: { type: String, required: true }, // Ensure email is required
   phone: { type: String, required: true }, // Ensure phone is required

@@ -137,6 +137,7 @@ const createProductWithFiles = async (req, res) => {
       adultprice: parseFloat(productData.adultprice),
       childprice: parseFloat(productData.childprice),
       weekendprice: productData.weekendprice ? parseFloat(productData.weekendprice) : undefined,
+      paymentType: productData.paymentType || 'advance',
       maplink: productData.maplink,
       waternumber: productData.waternumber,
       image: imagePaths[0], // Main image is the first in the array
@@ -250,6 +251,7 @@ const updateProductWithFiles = async (req, res) => {
       adultprice: productData.adultprice ? parseFloat(productData.adultprice) : existingProduct.adultprice,
       childprice: productData.childprice ? parseFloat(productData.childprice) : existingProduct.childprice,
       weekendprice: productData.weekendprice ? parseFloat(productData.weekendprice) : existingProduct.weekendprice,
+      paymentType: productData.paymentType || existingProduct.paymentType || 'advance',
       maplink: productData.maplink || existingProduct.maplink,
       waternumber: productData.waternumber || existingProduct.waternumber,
       image: finalImagePaths[0] || null, // The first image is the main image
