@@ -3,7 +3,7 @@ const Category = require('../models/cate');
 // Get all categories
 exports.getAllCategories = async (req, res) => {
   try {
-    const categories = await Category.find({ isActive: true }).sort({ sortOrder: 1, name: 1 });
+    const categories = await Category.find({ isActive: true }).sort({ locationPosition: 1, name: 1 });
     res.json({ categories });
   } catch (error) {
     console.error('Error in getAllCategories:', error);
@@ -61,6 +61,7 @@ exports.createCategory = async (req, res) => {
       image: imageUrl,
       video: videoUrl,
       sortOrder: parseInt(categoryData.sortOrder) || 0,
+      locationPosition: parseInt(categoryData.locationPosition) || 0,
       isActive: categoryData.isActive !== 'false'
     });
 
@@ -128,6 +129,7 @@ exports.updateCategory = async (req, res) => {
       image: imageUrl,
       video: videoUrl,
       sortOrder: categoryData.sortOrder ? parseInt(categoryData.sortOrder) : existingCategory.sortOrder,
+      locationPosition: categoryData.locationPosition ? parseInt(categoryData.locationPosition) : existingCategory.locationPosition,
       isActive: categoryData.isActive !== undefined ? (categoryData.isActive === 'true') : existingCategory.isActive
     };
 

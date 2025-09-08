@@ -33,6 +33,10 @@ const categorySchema = new mongoose.Schema({
   sortOrder: {
     type: Number,
     default: 0
+  },
+  locationPosition: {
+    type: Number,
+    default: 0
   }
 }, {
   timestamps: true

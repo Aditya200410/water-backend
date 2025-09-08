@@ -146,6 +146,7 @@ app.use('/api/settings', require('./routes/settings'));
 app.use('/api/msg91', require('./routes/msg91'));
 app.use('/api/blog', require('./routes/blogs')); // Blog routes
 app.use('/api/bookings', bookingRoutes);
+app.use('/api/tickets', require('./routes/tickets'));
 
 // Health check endpoint
 app.get('/health', (req, res) => {

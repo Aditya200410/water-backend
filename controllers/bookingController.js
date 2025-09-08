@@ -8,6 +8,8 @@ const { sendWhatsAppMessage } = require("../service/whatsappService");
 const {selfWhatsAppMessage }= require("../service/whatsappself");
 const {parkWhatsAppMessage }= require("../service/whatsapppark")
 const Counter = require("../models/Counter")
+const { generateAndUploadTicket } = require("../services/ticketService");
+const Ticket = require("../models/Ticket");
 
 // ✅ 2. ADD THIS HELPER FUNCTION
 // This function atomically finds and increments a counter in the database.
@@ -234,6 +236,43 @@ console.log("[createBooking] Generating custom booking ID for:", waterparkName);
             "[createBooking] Cash payment flow, sending notifications in parallel."
         );
       
+        // Generate and store ticket PDF for cash payment asynchronously
+        setImmediate(async () => {
+          try {
+            console.log("[createBooking] Generating ticket for cash booking:", booking.customBookingId);
+            
+            // Check if ticket already exists
+            const existingTicket = await Ticket.findOne({ 
+              $or: [
+                { bookingId: booking._id },
+                { customBookingId: booking.customBookingId }
+              ]
+            });
+            
+            if (!existingTicket) {
+              // Generate and upload ticket PDF
+              const ticketData = await generateAndUploadTicket(booking);
+              
+              // Create ticket record in database
+              const ticket = new Ticket({
+                bookingId: booking._id,
+                customBookingId: booking.customBookingId,
+                ticketPdfUrl: ticketData.ticketPdfUrl,
+                cloudinaryPublicId: ticketData.cloudinaryPublicId,
+                status: "generated"
+              });
+              
+              await ticket.save();
+              console.log("[createBooking] Ticket generated and saved successfully:", ticket._id);
+            } else {
+              console.log("[createBooking] Ticket already exists for booking:", booking.customBookingId);
+            }
+          } catch (ticketError) {
+            console.error("[createBooking] Error generating ticket:", ticketError);
+            // Don't fail the booking creation if ticket generation fails
+          }
+        });
+      
         // Send all notifications in parallel for faster response
         const notificationPromises = [
           selfWhatsAppMessage({
@@ -398,6 +437,60 @@ exports.verifyPayment = async (req, res) => {
       "[verifyPayment] Booking updated with payment success:",
       booking.customBookingId
     );
+
+    // Generate and store ticket PDF asynchronously (don't block response)
+    setImmediate(async () => {
+      try {
+        console.log("[verifyPayment] Starting ticket generation for booking:", booking.customBookingId);
+        
+        // Check if ticket already exists
+        const existingTicket = await Ticket.findOne({ 
+          $or: [
+            { bookingId: booking._id },
+            { customBookingId: booking.customBookingId }
+          ]
+        });
+        
+        if (existingTicket) {
+          console.log("[verifyPayment] Ticket already exists for booking:", booking.customBookingId);
+          return;
+        }
+        
+        console.log("[verifyPayment] No existing ticket found, generating new one...");
+        
+        // Generate and upload ticket PDF
+        console.log("[verifyPayment] Calling generateAndUploadTicket...");
+        const ticketData = await generateAndUploadTicket(booking);
+        console.log("[verifyPayment] Ticket data received:", {
+          hasUrl: !!ticketData.ticketPdfUrl,
+          hasPublicId: !!ticketData.cloudinaryPublicId,
+          url: ticketData.ticketPdfUrl
+        });
+        
+        // Create ticket record in database
+        console.log("[verifyPayment] Creating ticket record...");
+        const ticket = new Ticket({
+          bookingId: booking._id,
+          customBookingId: booking.customBookingId,
+          ticketPdfUrl: ticketData.ticketPdfUrl,
+          cloudinaryPublicId: ticketData.cloudinaryPublicId,
+          status: "generated"
+        });
+        
+        console.log("[verifyPayment] Saving ticket to database...");
+        await ticket.save();
+        console.log("[verifyPayment] Ticket generated and saved successfully:", {
+          ticketId: ticket._id,
+          customBookingId: ticket.customBookingId,
+          pdfUrl: ticket.ticketPdfUrl
+        });
+        
+      } catch (ticketError) {
+        console.error("[verifyPayment] Error generating ticket:", ticketError);
+        console.error("[verifyPayment] Error stack:", ticketError.stack);
+        // Don't fail the payment verification if ticket generation fails
+      }
+    });
 
     // ✅ Use the readable customBookingId for the frontend URL
     const frontendUrl = `https://waterparkchalo.com/ticket?bookingId=${booking.customBookingId}`;
