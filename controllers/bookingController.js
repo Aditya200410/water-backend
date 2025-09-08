@@ -508,112 +508,157 @@ exports.verifyPayment = async (req, res) => {
         left: booking.leftamount,
       }).catch(err => console.error("[verifyPayment] Park WhatsApp error:", err.message)),
 
-      // Email
-      sendEmail(
-        [booking.email, "am542062@gmail.com"],
-        `Payment Confirmation for ${booking.waterparkName}`,
-        `
-        <html>
-          <body style="font-family: Arial, sans-serif; background:#f9fafb; padding:20px; color:#333;">
-            <div style="max-width:600px; margin:0 auto; background:white; border-radius:10px; padding:20px; border:1px solid #ddd;">
-              
-              <div style="text-align:center; margin-bottom:20px;">
-                <h2 style="color:#1d4ed8; font-size:28px; margin:0;">${
-                  booking.waterparkName
-                }</h2>
-                <p style="color:#555; font-style:italic;">"Splash • Chill • Fun"</p>
-              </div>
-      
-              <table width="100%" style="border-top:1px dashed #60a5fa; padding-top:15px; font-size:14px;">
-                <tr>
-                  <td>
-                    <p style="margin:0; color:#666; font-size:12px;">Booking ID</p>
-                    <p style="margin:0; font-family:monospace; color:#1d4ed8; font-weight:bold;">${
-                      booking.customBookingId
-                    }</p>
-                  </td>
-                  <td>
-                    <p style="margin:0; color:#666; font-size:12px;">Booking Url</p>
-                    <p style="margin:0; font-family:monospace; color:#1d4ed8; font-weight:bold;">
-                      https://waterpark-frontend.vercel.app/booking/${booking.customBookingId}
-                    </p>
-                  </td>
-                  <td style="text-align:right;">
-                    <p style="margin:0; color:#666; font-size:12px;">Visit Date</p>
-                    <p style="margin:0; font-weight:bold; color:#111;">
-                      ${new Date(booking.date).toLocaleDateString()}
-                    </p>
-                  </td>
-                </tr>
-                <tr>
-                  <td>
-                    <p style="margin:0; color:#666; font-size:12px;">Name</p>
-                    <p style="margin:0; font-weight:600; color:#111;">${
-                      booking.name
-                    }</p>
-                  </td>
-                  <td style="text-align:right;">
-                    <p style="margin:0; color:#666; font-size:12px;">Phone</p>
-                    <p style="margin:0; font-weight:600; color:#111;">${
-                      booking.phone
-                    }</p>
-                  </td>
-                </tr>
-              </table>
-      
-              <hr style="border:0; border-top:2px dotted #60a5fa; margin:20px 0;">
-      
-              <table width="100%" style="font-size:14px;">
-                <tr>
-                  <td>
-                    <p style="margin:0; color:#666; font-size:12px;">Adults</p>
-                    <p style="margin:0; font-weight:bold; color:#1d4ed8;">${
-                      booking.adults
-                    }</p>
-                  </td>
-                  <td style="text-align:right;">
-                    <p style="margin:0; color:#666; font-size:12px;">Children</p>
-                    <p style="margin:0; font-weight:bold; color:#db2777;">${
-                      booking.children
-                    }</p>
-                  </td>
-                </tr>
-              </table>
-      
-              <table width="100%" style="border-top:1px dashed #60a5fa; padding-top:15px; font-size:14px; margin-top:15px;">
-                <tr>
-                  <td>
-                    <p style="margin:0; color:#666; font-size:12px;">Advance Paid</p>
-                    <p style="margin:0; font-weight:600; color:#16a34a;">₹${
-                      booking.advanceAmount
-                    }</p>
-                  </td>
-                  <td style="text-align:right;">
-                    <p style="margin:0; color:#666; font-size:12px;">Total Amount</p>
-                    <p style="margin:0; font-size:20px; font-weight:800; color:#be185d;">₹${
-                      booking.totalAmount
-                    }</p>
-                  </td>
-                    <td style="text-align:right;">
-                    <p style="margin:0; color:#666; font-size:12px;">Left Amount</p>
-                    <p style="margin:0; font-size:20px; font-weight:800; color:#be185d;">₹${
-                      booking.leftamount
-                    }</p>
-                  </td>
-                </tr>
-              </table>
-      
-              <div style="text-align:center; margin-top:30px; font-size:13px; color:#666;">
-                <p>Thank you for booking with <strong>${
-                  booking.waterparkName
-                }</strong>!</p>
-                <p>We look forward to your visit.</p>
-              </div>
-            </div>
-          </body>
-        </html>
-        `
-      ).catch(err => console.error("[verifyPayment] Email error:", err.message))
+    // Email
+sendEmail(
+  [booking.email, "am542062@gmail.com"],
+  `✅ Your Booking is Confirmed for ${booking.waterparkName}!`,
+  `
+  <!DOCTYPE html>
+  <html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Booking Confirmation</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        background-color: #f4f4f7;
+        font-family: Arial, sans-serif;
+      }
+      .container {
+        max-width: 600px;
+        margin: 20px auto;
+        background-color: #ffffff;
+        border-radius: 12px;
+        overflow: hidden;
+        border: 1px solid #dee2e6;
+      }
+      .header {
+        background-color: #007bff;
+        color: #ffffff;
+        padding: 30px 20px;
+        text-align: center;
+      }
+      .header h1 {
+        margin: 0;
+        font-size: 28px;
+        font-weight: bold;
+      }
+      .content {
+        padding: 30px;
+        color: #333333;
+        line-height: 1.6;
+      }
+      .content h2 {
+        color: #0056b3;
+        font-size: 22px;
+        margin-top: 0;
+      }
+      .details-table, .payment-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 20px;
+      }
+      .details-table td, .payment-table td {
+        padding: 12px 0;
+        font-size: 16px;
+        border-bottom: 1px solid #eeeeee;
+      }
+      .details-table td:first-child {
+        color: #555555;
+      }
+      .details-table td:last-child, .payment-table td:last-child {
+        text-align: right;
+        font-weight: bold;
+      }
+      .payment-table .total-due td {
+        font-size: 20px;
+        font-weight: bold;
+        color: #d9534f; /* A color for 'due' amount */
+      }
+      .payment-table .paid td {
+        color: #5cb85c; /* Green for 'paid' */
+      }
+      .cta-button {
+        display: block;
+        width: 200px;
+        margin: 30px auto;
+        padding: 15px 20px;
+        background-color: #007bff;
+        color: #ffffff;
+        text-align: center;
+        text-decoration: none;
+        border-radius: 8px;
+        font-size: 16px;
+        font-weight: bold;
+      }
+      .footer {
+        text-align: center;
+        padding: 20px;
+        font-size: 12px;
+        color: #888888;
+        background-color: #f8f9fa;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <h1>${booking.waterparkName}</h1>
+      </div>
+      <div class="content">
+        <h2>Your Booking is Confirmed!</h2>
+        <p>Hello ${booking.name}, thank you for your booking! We are excited to welcome you for a day of fun and splashes. Please find your booking details below.</p>
+
+        <table class="details-table">
+          <tr>
+            <td>Booking ID:</td>
+            <td style="font-family: monospace;">${booking.customBookingId}</td>
+          </tr>
+          <tr>
+            <td>Visit Date:</td>
+            <td>${new Date(booking.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</td>
+          </tr>
+          <tr>
+            <td>Guests:</td>
+            <td>${booking.adults} Adult(s), ${booking.children} Child(ren)</td>
+          </tr>
+           <tr>
+            <td>Phone:</td>
+            <td>${booking.phone}</td>
+          </tr>
+        </table>
+
+        <h2 style="margin-top: 30px;">Payment Summary</h2>
+        <table class="payment-table">
+          <tr>
+            <td>Total Amount:</td>
+            <td>₹${booking.totalAmount.toFixed(2)}</td>
+          </tr>
+          <tr class="paid">
+            <td>Advance Paid:</td>
+            <td>₹${booking.advanceAmount.toFixed(2)}</td>
+          </tr>
+          <tr class="total-due">
+            <td>Amount Due at Park:</td>
+            <td>₹${booking.leftamount.toFixed(2)}</td>
+          </tr>
+        </table>
+        
+        <a href="https://waterpark-frontend.vercel.app/booking/${booking.customBookingId}" class="cta-button" style="color: #ffffff;">View Your Booking</a>
+        
+        <p style="text-align: center; color: #555;">Please show this email or a screenshot at the ticket counter upon your arrival.</p>
+      </div>
+      <div class="footer">
+        <p>This is an automated email. Please do not reply.</p>
+        <p>&copy; ${new Date().getFullYear()} ${booking.waterparkName}. All rights reserved.</p>
+      </div>
+    </div>
+  </body>
+  </html>
+`
+).catch(err => console.error("[sendEmail] Email error:", err.message))
     ];
 
     // Don't wait for notifications to complete - respond immediately
