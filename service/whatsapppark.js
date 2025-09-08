@@ -22,6 +22,7 @@ async function parkWhatsAppMessage(order) {
       childquantity: normalize(order.childquantity),
       totalAmount: normalize(order.totalAmount),
       left: normalize(order.left),
+      
     };
 
 
@@ -36,8 +37,8 @@ async function parkWhatsAppMessage(order) {
       `${process.env.RB_DIGITAL_BASE_URL}/v2/whatsapp-business/messages`,
       {
         to: normalized.waternumber,
-        language: "en_us",
-        name: "bill",
+        language: "en_GB",
+        name: "ticket",
         phoneNoId: `${process.env.RB_DIGITAL_NUMBER_ID}`,
         type: "template",
         bodyParams: [normalized.customerName,
@@ -47,7 +48,12 @@ async function parkWhatsAppMessage(order) {
           normalized.adultquantity,
           normalized.childquantity,
           normalized.totalAmount,
-          normalized.left,],
+          normalized.left,
+          normalized.customBookingId,
+      
+      ]
+        
+        ,
       },
       {
         headers: {

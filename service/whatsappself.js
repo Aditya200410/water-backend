@@ -35,8 +35,8 @@ async function selfWhatsAppMessage(order) {
       `${process.env.RB_DIGITAL_BASE_URL}/v2/whatsapp-business/messages`,
       {
         to: "9146869202",
-        language: "en_us",
-        name: "bill",
+        language: "en_GB",
+        name: "ticket",
         phoneNoId: `${process.env.RB_DIGITAL_NUMBER_ID}`,
         type: "template",
         bodyParams: [normalized.customerName,
@@ -46,7 +46,7 @@ async function selfWhatsAppMessage(order) {
           normalized.adultquantity,
           normalized.childquantity,
           normalized.totalAmount,
-          normalized.left,],
+          normalized.left, normalized.customBookingId,],
       },
       {
         headers: {

@@ -238,42 +238,7 @@ console.log("[createBooking] Generating custom booking ID for:", waterparkName);
             "[createBooking] Cash payment flow, sending notifications in parallel."
         );
       
-        // Generate and store ticket PDF for cash payment asynchronously
-        setImmediate(async () => {
-          try {
-            console.log("[createBooking] Generating ticket for cash booking:", booking.customBookingId);
-            
-            // Check if ticket already exists
-            const existingTicket = await Ticket.findOne({ 
-              $or: [
-                { bookingId: booking._id },
-                { customBookingId: booking.customBookingId }
-              ]
-            });
-            
-            if (!existingTicket) {
-              // Generate and upload ticket PDF
-              const ticketData = await generateAndUploadTicket(booking);
-              
-              // Create ticket record in database
-              const ticket = new Ticket({
-                bookingId: booking._id,
-                customBookingId: booking.customBookingId,
-                ticketPdfUrl: ticketData.ticketPdfUrl,
-                cloudinaryPublicId: ticketData.cloudinaryPublicId,
-                status: "generated"
-              });
-              
-              await ticket.save();
-              console.log("[createBooking] Ticket generated and saved successfully:", ticket._id);
-            } else {
-              console.log("[createBooking] Ticket already exists for booking:", booking.customBookingId);
-            }
-          } catch (ticketError) {
-            console.error("[createBooking] Error generating ticket:", ticketError);
-            // Don't fail the booking creation if ticket generation fails
-          }
-        });
+        
       
         // Send all notifications in parallel for faster response
         const notificationPromises = [
@@ -317,6 +282,8 @@ console.log("[createBooking] Generating custom booking ID for:", waterparkName);
 
     if (!razorpay) {
         console.error("[createBooking] Razorpay not configured.");
+        console.error("[createBooking] RAZORPAY_KEY_ID:", process.env.RAZORPAY_KEY_ID ? "Set" : "Not set");
+        console.error("[createBooking] RAZORPAY_KEY_SECRET:", process.env.RAZORPAY_KEY_SECRET ? "Set" : "Not set");
         return res
             .status(500)
             .json({
