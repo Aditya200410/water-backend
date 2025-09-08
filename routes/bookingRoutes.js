@@ -5,6 +5,8 @@ const bookingController = require("../controllers/bookingController");
 router.post("/create", bookingController.createBooking);
 router.post("/verify", bookingController.verifyPayment);
 router.get('/email', bookingController.getOrdersByEmail);
+// New route for getting booking with ticket details (for sharing)
+router.get("/ticket/:customBookingId", bookingController.getBookingWithTicket);
 router.get("/:customBookingId", bookingController.getSingleBooking);
 router.get("/", bookingController.getAllBookings);
 

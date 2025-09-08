@@ -810,6 +810,54 @@ exports.getUserBookings = async (req, res) => {
 // ----------------------------
 // Test Razorpay Config
 // ----------------------------
+// ----------------------------
+// Get Booking with Ticket Details for sharing
+// ----------------------------
+exports.getBookingWithTicket = async (req, res) => {
+  console.log("[getBookingWithTicket] Params:", req.params);
+
+  try {
+    const { customBookingId } = req.params;
+    
+    // Find the booking with completed payment
+    const booking = await Booking.findOne({ 
+      customBookingId: customBookingId,
+      paymentStatus: "Completed" 
+    });
+    
+    if (!booking) {
+      console.warn("[getBookingWithTicket] Booking not found or not completed:", customBookingId);
+      return res
+        .status(404)
+        .json({ success: false, message: "Booking not found or payment not completed." });
+    }
+
+    // Find the associated ticket
+    const ticket = await Ticket.findOne({ customBookingId: customBookingId });
+    
+    console.log("[getBookingWithTicket] Booking found:", booking.customBookingId);
+    console.log("[getBookingWithTicket] Ticket found:", ticket ? ticket._id : "No ticket");
+
+    // Return booking with ticket information
+    return res.status(200).json({ 
+      success: true, 
+      booking,
+      ticket: ticket ? {
+        id: ticket._id,
+        ticketPdfUrl: ticket.ticketPdfUrl,
+        generatedAt: ticket.generatedAt,
+        status: ticket.status,
+        downloadCount: ticket.downloadCount
+      } : null
+    });
+  } catch (error) {
+    console.error("[getBookingWithTicket] Error:", error);
+    return res
+      .status(500)
+      .json({ success: false, message: "Error fetching booking with ticket." });
+  }
+};
+
 exports.testRazorpayConfig = async (req, res) => {
   console.log("[testRazorpayConfig] Testing Razorpay setup...");
   try {
