@@ -532,6 +532,12 @@ exports.verifyPayment = async (req, res) => {
                       booking.customBookingId
                     }</p>
                   </td>
+                  <td>
+                    <p style="margin:0; color:#666; font-size:12px;">Booking Url</p>
+                    <p style="margin:0; font-family:monospace; color:#1d4ed8; font-weight:bold;">
+                      https://waterpark-frontend.vercel.app/booking/${booking.customBookingId}
+                    </p>
+                  </td>
                   <td style="text-align:right;">
                     <p style="margin:0; color:#666; font-size:12px;">Visit Date</p>
                     <p style="margin:0; font-weight:bold; color:#111;">
