@@ -282,8 +282,6 @@ console.log("[createBooking] Generating custom booking ID for:", waterparkName);
 
     if (!razorpay) {
         console.error("[createBooking] Razorpay not configured.");
-        console.error("[createBooking] RAZORPAY_KEY_ID:", process.env.RAZORPAY_KEY_ID ? "Set" : "Not set");
-        console.error("[createBooking] RAZORPAY_KEY_SECRET:", process.env.RAZORPAY_KEY_SECRET ? "Set" : "Not set");
         return res
             .status(500)
             .json({
