@@ -1,30 +1,23 @@
 const Ticket = require("../models/Ticket");
 const Booking = require("../models/Booking");
-const { generateTicketPDF } = require("../services/ticketService");
+
+// Note: Ticket generation removed - tickets are now generated on-demand from frontend
 
 /**
- * Generate and store ticket PDF after booking verification
+ * Get booking details for ticket generation (no ticket storage)
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
  */
-exports.generateTicket = async (req, res) => {
+exports.getTicket = async (req, res) => {
   try {
-    console.log("[generateTicket] Request body:", req.body);
+    console.log("[getTicket] Request params:", req.params);
     
-    const { bookingId, customBookingId } = req.body;
+    const { bookingId } = req.params;
     
-    if (!bookingId && !customBookingId) {
-      return res.status(400).json({
-        success: false,
-        message: "Either bookingId or customBookingId is required"
-      });
-    }
+    // Find the booking directly
+    let booking = await Booking.findOne({ customBookingId: bookingId });
     
-    // Find the booking
-    let booking;
-    if (customBookingId) {
-      booking = await Booking.findOne({ customBookingId });
-    } else {
+    if (!booking) {
       booking = await Booking.findById(bookingId);
     }
     
@@ -35,155 +28,78 @@ exports.generateTicket = async (req, res) => {
       });
     }
     
-    // Check if booking is verified/completed
+    // Check if booking is completed
     if (booking.paymentStatus !== "Completed") {
       return res.status(400).json({
         success: false,
-        message: "Booking must be verified before generating ticket"
+        message: "Booking not completed"
       });
     }
     
-    // Check if ticket already exists
-    const existingTicket = await Ticket.findOne({ 
-      $or: [
-        { bookingId: booking._id },
-        { customBookingId: booking.customBookingId }
-      ]
-    });
+    console.log("[getTicket] Booking found:", booking.customBookingId);
     
-    if (existingTicket) {
-      return res.status(200).json({
-        success: true,
-        message: "Ticket already exists",
-        ticket: existingTicket
-      });
-    }
-    
-    // Generate ticket PDF locally
-    console.log("[generateTicket] Generating ticket for booking:", booking.customBookingId);
-    const ticketData = await generateTicketPDF(booking);
-    
-    // Create ticket record in database (no PDF URL stored)
-    const ticket = new Ticket({
-      bookingId: booking._id,
-      customBookingId: booking.customBookingId,
-      status: "generated"
-    });
-    
-    await ticket.save();
-    
-    console.log("[generateTicket] Ticket generated and saved successfully:", ticket._id);
-    
-    return res.status(201).json({
+    // Return booking data for frontend ticket generation
+    return res.status(200).json({
       success: true,
-      message: "Ticket generated successfully",
-      ticket: {
-        id: ticket._id,
-        customBookingId: ticket.customBookingId,
-        generatedAt: ticket.generatedAt,
-        status: ticket.status
+      booking: {
+        id: booking._id,
+        customBookingId: booking.customBookingId,
+        name: booking.name,
+        email: booking.email,
+        phone: booking.phone,
+        waternumber: booking.waternumber,
+        adults: booking.adults,
+        children: booking.children,
+        date: booking.date,
+        bookingDate: booking.bookingDate,
+        advanceAmount: booking.advanceAmount,
+        totalAmount: booking.totalAmount,
+        leftamount: booking.leftamount,
+        waterparkName: booking.waterparkName
       }
     });
-    
-  } catch (error) {
-    console.error("[generateTicket] Error:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Failed to generate ticket",
-      error: error.message
-    });
-  }
-};
-
-/**
- * Get ticket by booking ID or custom booking ID and generate PDF for download
- * @param {Object} req - Express request object
- * @param {Object} res - Express response object
- */
-exports.getTicket = async (req, res) => {
-  try {
-    console.log("[getTicket] Request params:", req.params);
-    
-    const { bookingId } = req.params;
-    
-    // Try to find by custom booking ID first, then by ObjectId
-    let ticket = await Ticket.findOne({ customBookingId: bookingId });
-    
-    if (!ticket) {
-      ticket = await Ticket.findById(bookingId);
-    }
-    
-    if (!ticket) {
-      return res.status(404).json({
-        success: false,
-        message: "Ticket not found"
-      });
-    }
-    
-    // Get the booking data to generate PDF
-    const booking = await Booking.findById(ticket.bookingId);
-    if (!booking) {
-      return res.status(404).json({
-        success: false,
-        message: "Booking not found"
-      });
-    }
-    
-    // Generate PDF for download
-    console.log("[getTicket] Generating PDF for download:", ticket.customBookingId);
-    const ticketData = await generateTicketPDF(booking);
-    
-    // Update download count and last downloaded time
-    ticket.downloadCount += 1;
-    ticket.lastDownloadedAt = new Date();
-    ticket.status = "downloaded";
-    await ticket.save();
-    
-    console.log("[getTicket] PDF generated and download count updated:", ticket.customBookingId);
-    
-    // Set headers for PDF download
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="waterpark-ticket-${ticket.customBookingId}.pdf"`);
-    res.setHeader('Content-Length', ticketData.ticketPdfBuffer.length);
-    
-    // Send the PDF buffer
-    res.send(ticketData.ticketPdfBuffer);
     
   } catch (error) {
     console.error("[getTicket] Error:", error);
     return res.status(500).json({
       success: false,
-      message: "Failed to get ticket",
+      message: "Failed to get booking",
       error: error.message
     });
   }
 };
 
 /**
- * Get all tickets (admin only)
+ * Get all completed bookings (admin only) - tickets generated on-demand
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
  */
 exports.getAllTickets = async (req, res) => {
   try {
-    console.log("[getAllTickets] Fetching all tickets...");
+    console.log("[getAllTickets] Fetching all completed bookings...");
     
-    const tickets = await Ticket.find()
-      .populate('bookingId', 'name email phone waterparkName date adults children totalAmount')
-      .sort({ createdAt: -1 });
+    const bookings = await Booking.find({ paymentStatus: "Completed" })
+      .select('customBookingId name email phone waterparkName date adults children totalAmount advanceAmount leftamount bookingDate')
+      .sort({ bookingDate: -1 });
     
-    console.log("[getAllTickets] Found tickets:", tickets.length);
+    console.log("[getAllTickets] Found completed bookings:", bookings.length);
     
     return res.status(200).json({
       success: true,
-      tickets: tickets.map(ticket => ({
-        id: ticket._id,
-        customBookingId: ticket.customBookingId,
-        generatedAt: ticket.generatedAt,
-        status: ticket.status,
-        downloadCount: ticket.downloadCount,
-        lastDownloadedAt: ticket.lastDownloadedAt,
-        booking: ticket.bookingId
+      bookings: bookings.map(booking => ({
+        id: booking._id,
+        customBookingId: booking.customBookingId,
+        name: booking.name,
+        email: booking.email,
+        phone: booking.phone,
+        waterparkName: booking.waterparkName,
+        date: booking.date,
+        adults: booking.adults,
+        children: booking.children,
+        totalAmount: booking.totalAmount,
+        advanceAmount: booking.advanceAmount,
+        leftamount: booking.leftamount,
+        bookingDate: booking.bookingDate
       }))
     });
     
@@ -191,14 +107,14 @@ exports.getAllTickets = async (req, res) => {
     console.error("[getAllTickets] Error:", error);
     return res.status(500).json({
       success: false,
-      message: "Failed to get tickets",
+      message: "Failed to get bookings",
       error: error.message
     });
   }
 };
 
 /**
- * Delete ticket (admin only)
+ * Delete booking (admin only) - no tickets to delete since they're generated on-demand
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
  */
@@ -208,31 +124,34 @@ exports.deleteTicket = async (req, res) => {
     
     const { ticketId } = req.params;
     
-    const ticket = await Ticket.findById(ticketId);
+    // Find booking by ID or customBookingId
+    let booking = await Booking.findById(ticketId);
     
-    if (!ticket) {
+    if (!booking) {
+      booking = await Booking.findOne({ customBookingId: ticketId });
+    }
+    
+    if (!booking) {
       return res.status(404).json({
         success: false,
-        message: "Ticket not found"
+        message: "Booking not found"
       });
     }
     
-    // TODO: Delete from Cloudinary as well
-    // For now, just delete from database
-    await Ticket.findByIdAndDelete(ticketId);
+    await Booking.findByIdAndDelete(booking._id);
     
-    console.log("[deleteTicket] Ticket deleted successfully:", ticketId);
+    console.log("[deleteTicket] Booking deleted successfully:", booking.customBookingId);
     
     return res.status(200).json({
       success: true,
-      message: "Ticket deleted successfully"
+      message: "Booking deleted successfully"
     });
     
   } catch (error) {
     console.error("[deleteTicket] Error:", error);
     return res.status(500).json({
       success: false,
-      message: "Failed to delete ticket",
+      message: "Failed to delete booking",
       error: error.message
     });
   }
