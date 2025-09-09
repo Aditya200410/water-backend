@@ -8,7 +8,7 @@ const { sendWhatsAppMessage } = require("../service/whatsappService");
 const {selfWhatsAppMessage }= require("../service/whatsappself");
 const {parkWhatsAppMessage }= require("../service/whatsapppark")
 const Counter = require("../models/Counter")
-const { generateAndUploadTicket } = require("../services/ticketService");
+const { generateTicketPDF } = require("../services/ticketService");
 const Ticket = require("../models/Ticket");
 
 // ✅ 2. ADD THIS HELPER FUNCTION
@@ -425,22 +425,19 @@ exports.verifyPayment = async (req, res) => {
         
         console.log("[verifyPayment] No existing ticket found, generating new one...");
         
-        // Generate and upload ticket PDF
-        console.log("[verifyPayment] Calling generateAndUploadTicket...");
-        const ticketData = await generateAndUploadTicket(booking);
+        // Generate ticket PDF locally
+        console.log("[verifyPayment] Calling generateTicketPDF...");
+        const ticketData = await generateTicketPDF(booking);
         console.log("[verifyPayment] Ticket data received:", {
-          hasUrl: !!ticketData.ticketPdfUrl,
-          hasPublicId: !!ticketData.cloudinaryPublicId,
-          url: ticketData.ticketPdfUrl
+          hasBuffer: !!ticketData.ticketPdfBuffer,
+          generatedAt: ticketData.generatedAt
         });
         
-        // Create ticket record in database
+        // Create ticket record in database (no PDF URL stored)
         console.log("[verifyPayment] Creating ticket record...");
         const ticket = new Ticket({
           bookingId: booking._id,
           customBookingId: booking.customBookingId,
-          ticketPdfUrl: ticketData.ticketPdfUrl,
-          cloudinaryPublicId: ticketData.cloudinaryPublicId,
           status: "generated"
         });
         
@@ -448,8 +445,7 @@ exports.verifyPayment = async (req, res) => {
         await ticket.save();
         console.log("[verifyPayment] Ticket generated and saved successfully:", {
           ticketId: ticket._id,
-          customBookingId: ticket.customBookingId,
-          pdfUrl: ticket.ticketPdfUrl
+          customBookingId: ticket.customBookingId
         });
         
       } catch (ticketError) {
@@ -646,9 +642,9 @@ sendEmail(
           </tr>
         </table>
         
-        <a href="https://waterpark-frontend.vercel.app/booking/${booking.customBookingId}" class="cta-button" style="color: #ffffff;">View Your Booking</a>
+        <a href="https://waterpark-frontend.vercel.app/booking/${booking.customBookingId}" class="cta-button" style="color: #ffffff;">View Your Ticket</a>
         
-        <p style="text-align: center; color: #555;">Please show this email or a screenshot at the ticket counter upon your arrival.</p>
+        <p style="text-align: center; color: #555;">Please show the ticket at the ticket counter upon your arrival.</p>
       </div>
       <div class="footer">
         <p>This is an automated email. Please do not reply.</p>
@@ -744,6 +740,59 @@ exports.getOrdersByEmail = async (req, res) => {
       .json({
         success: false,
         message: "Failed to fetch orders.",
+        error: error.message,
+      });
+  }
+};
+
+// Get bookings by email OR phone number
+exports.getBookingsByEmailOrPhone = async (req, res) => {
+  try {
+    const { email, phone } = req.query;
+    
+    if (!email && !phone) {
+      return res
+        .status(400)
+        .json({ 
+          success: false, 
+          message: "Either email or phone query parameter is required." 
+        });
+    }
+
+    // Build query to search by email OR phone
+    const query = {
+      $or: []
+    };
+
+    if (email) {
+      query.$or.push({
+        email: { $regex: new RegExp(`^${email}$`, "i") }
+      });
+    }
+
+    if (phone) {
+      query.$or.push({
+        phone: { $regex: new RegExp(`^${phone}$`, "i") }
+      });
+    }
+
+    // Only fetch completed bookings
+    query.paymentStatus = "Completed";
+
+    const bookings = await Booking.find(query).sort({ bookingDate: -1 });
+
+    res.status(200).json({ 
+      success: true, 
+      bookings,
+      count: bookings.length 
+    });
+  } catch (error) {
+    console.error("Error fetching bookings by email or phone:", error);
+    res
+      .status(500)
+      .json({
+        success: false,
+        message: "Failed to fetch bookings.",
         error: error.message,
       });
   }
@@ -860,7 +909,6 @@ exports.getBookingWithTicket = async (req, res) => {
       booking,
       ticket: ticket ? {
         id: ticket._id,
-        ticketPdfUrl: ticket.ticketPdfUrl,
         generatedAt: ticket.generatedAt,
         status: ticket.status,
         downloadCount: ticket.downloadCount

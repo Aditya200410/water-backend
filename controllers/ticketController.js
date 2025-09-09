@@ -1,6 +1,6 @@
 const Ticket = require("../models/Ticket");
 const Booking = require("../models/Booking");
-const { generateAndUploadTicket } = require("../services/ticketService");
+const { generateTicketPDF } = require("../services/ticketService");
 
 /**
  * Generate and store ticket PDF after booking verification
@@ -59,16 +59,14 @@ exports.generateTicket = async (req, res) => {
       });
     }
     
-    // Generate and upload ticket PDF
+    // Generate ticket PDF locally
     console.log("[generateTicket] Generating ticket for booking:", booking.customBookingId);
-    const ticketData = await generateAndUploadTicket(booking);
+    const ticketData = await generateTicketPDF(booking);
     
-    // Create ticket record in database
+    // Create ticket record in database (no PDF URL stored)
     const ticket = new Ticket({
       bookingId: booking._id,
       customBookingId: booking.customBookingId,
-      ticketPdfUrl: ticketData.ticketPdfUrl,
-      cloudinaryPublicId: ticketData.cloudinaryPublicId,
       status: "generated"
     });
     
@@ -82,7 +80,6 @@ exports.generateTicket = async (req, res) => {
       ticket: {
         id: ticket._id,
         customBookingId: ticket.customBookingId,
-        ticketPdfUrl: ticket.ticketPdfUrl,
         generatedAt: ticket.generatedAt,
         status: ticket.status
       }
@@ -99,7 +96,7 @@ exports.generateTicket = async (req, res) => {
 };
 
 /**
- * Get ticket by booking ID or custom booking ID
+ * Get ticket by booking ID or custom booking ID and generate PDF for download
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
  */
@@ -123,26 +120,34 @@ exports.getTicket = async (req, res) => {
       });
     }
     
+    // Get the booking data to generate PDF
+    const booking = await Booking.findById(ticket.bookingId);
+    if (!booking) {
+      return res.status(404).json({
+        success: false,
+        message: "Booking not found"
+      });
+    }
+    
+    // Generate PDF for download
+    console.log("[getTicket] Generating PDF for download:", ticket.customBookingId);
+    const ticketData = await generateTicketPDF(booking);
+    
     // Update download count and last downloaded time
     ticket.downloadCount += 1;
     ticket.lastDownloadedAt = new Date();
     ticket.status = "downloaded";
     await ticket.save();
     
-    console.log("[getTicket] Ticket found and download count updated:", ticket.customBookingId);
+    console.log("[getTicket] PDF generated and download count updated:", ticket.customBookingId);
     
-    return res.status(200).json({
-      success: true,
-      ticket: {
-        id: ticket._id,
-        customBookingId: ticket.customBookingId,
-        ticketPdfUrl: ticket.ticketPdfUrl,
-        generatedAt: ticket.generatedAt,
-        status: ticket.status,
-        downloadCount: ticket.downloadCount,
-        lastDownloadedAt: ticket.lastDownloadedAt
-      }
-    });
+    // Set headers for PDF download
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="waterpark-ticket-${ticket.customBookingId}.pdf"`);
+    res.setHeader('Content-Length', ticketData.ticketPdfBuffer.length);
+    
+    // Send the PDF buffer
+    res.send(ticketData.ticketPdfBuffer);
     
   } catch (error) {
     console.error("[getTicket] Error:", error);
@@ -174,7 +179,6 @@ exports.getAllTickets = async (req, res) => {
       tickets: tickets.map(ticket => ({
         id: ticket._id,
         customBookingId: ticket.customBookingId,
-        ticketPdfUrl: ticket.ticketPdfUrl,
         generatedAt: ticket.generatedAt,
         status: ticket.status,
         downloadCount: ticket.downloadCount,

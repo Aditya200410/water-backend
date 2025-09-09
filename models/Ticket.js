@@ -13,14 +13,6 @@ const ticketSchema = new mongoose.Schema({
     required: true,
     unique: true
   },
-  ticketPdfUrl: {
-    type: String,
-    required: true
-  },
-  cloudinaryPublicId: {
-    type: String,
-    required: true
-  },
   generatedAt: {
     type: Date,
     default: Date.now

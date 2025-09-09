@@ -1,52 +1,36 @@
-const cloudinary = require('cloudinary').v2;
 const puppeteer = require('puppeteer');
 const path = require('path');
 const fs = require('fs').promises;
 
-// Configure Cloudinary
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET,
-});
-
 /**
- * Generate ticket PDF and upload to Cloudinary
+ * Generate ticket PDF locally (no Cloudinary upload)
  * @param {Object} booking - The booking object
- * @returns {Object} - Contains ticketPdfUrl and cloudinaryPublicId
+ * @returns {Object} - Contains ticketPdfBuffer for direct download
  */
-async function generateAndUploadTicket(booking) {
+async function generateTicketPDF(booking) {
   try {
-    console.log('[generateAndUploadTicket] Starting ticket generation for booking:', booking.customBookingId);
+    console.log('[generateTicketPDF] Starting ticket generation for booking:', booking.customBookingId);
     
     // Generate HTML content for the ticket
-    console.log('[generateAndUploadTicket] Generating HTML content...');
+    console.log('[generateTicketPDF] Generating HTML content...');
     const htmlContent = generateTicketHTML(booking);
-    console.log('[generateAndUploadTicket] HTML content generated, length:', htmlContent.length);
+    console.log('[generateTicketPDF] HTML content generated, length:', htmlContent.length);
     
     let pdfBuffer;
     
-    // Temporarily use only the simple PDF method due to Puppeteer issues
-    console.log('[generateAndUploadTicket] Using simple PDF generation method...');
+    // Use simple PDF generation method
+    console.log('[generateTicketPDF] Using simple PDF generation method...');
     pdfBuffer = await generateSimplePDF(booking);
-    console.log('[generateAndUploadTicket] PDF generated with simple method, buffer size:', pdfBuffer.length);
-    
-    // Upload to Cloudinary
-    console.log('[generateAndUploadTicket] Uploading to Cloudinary...');
-    const uploadResult = await uploadToCloudinary(pdfBuffer, booking.customBookingId);
-    console.log('[generateAndUploadTicket] Upload successful:', {
-      secure_url: uploadResult.secure_url,
-      public_id: uploadResult.public_id
-    });
+    console.log('[generateTicketPDF] PDF generated with simple method, buffer size:', pdfBuffer.length);
     
     return {
-      ticketPdfUrl: uploadResult.secure_url,
-      cloudinaryPublicId: uploadResult.public_id
+      ticketPdfBuffer: pdfBuffer,
+      generatedAt: new Date()
     };
     
   } catch (error) {
-    console.error('[generateAndUploadTicket] Error:', error);
-    console.error('[generateAndUploadTicket] Error stack:', error.stack);
+    console.error('[generateTicketPDF] Error:', error);
+    console.error('[generateTicketPDF] Error stack:', error.stack);
     throw new Error(`Failed to generate ticket: ${error.message}`);
   }
 }
@@ -577,46 +561,6 @@ startxref
   }
 }
 
-/**
- * Upload PDF buffer to Cloudinary
- * @param {Buffer} pdfBuffer - PDF buffer to upload
- * @param {String} customBookingId - Custom booking ID for naming
- * @returns {Object} - Cloudinary upload result
- */
-async function uploadToCloudinary(pdfBuffer, customBookingId) {
-  try {
-    console.log('[uploadToCloudinary] Uploading PDF to Cloudinary...');
-    
-    return new Promise((resolve, reject) => {
-      const uploadStream = cloudinary.uploader.upload_stream(
-        {
-          resource_type: 'raw',
-          public_id: `waterpark-tickets/${customBookingId}`,
-          format: 'pdf',
-          tags: ['ticket', 'waterpark', customBookingId],
-          use_filename: false,
-          unique_filename: false
-        },
-        (error, result) => {
-          if (error) {
-            console.error('[uploadToCloudinary] Error:', error);
-            reject(error);
-          } else {
-            console.log('[uploadToCloudinary] Upload successful:', result.secure_url);
-            resolve(result);
-          }
-        }
-      );
-      
-      uploadStream.end(pdfBuffer);
-    });
-    
-  } catch (error) {
-    console.error('[uploadToCloudinary] Error:', error);
-    throw error;
-  }
-}
-
 module.exports = {
-  generateAndUploadTicket
+  generateTicketPDF
 };

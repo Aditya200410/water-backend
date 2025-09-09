@@ -16,7 +16,7 @@ router.post("/test/:customBookingId", async (req, res) => {
   try {
     const { customBookingId } = req.params;
     const Booking = require("../models/Booking");
-    const { generateAndUploadTicket } = require("../services/ticketService");
+    const { generateTicketPDF } = require("../services/ticketService");
     
     console.log(`[test] Testing ticket generation for: ${customBookingId}`);
     
@@ -29,14 +29,14 @@ router.post("/test/:customBookingId", async (req, res) => {
     console.log(`[test] Found booking: ${booking.name}`);
     
     // Test ticket generation
-    const ticketData = await generateAndUploadTicket(booking);
+    const ticketData = await generateTicketPDF(booking);
     
     res.json({ 
       success: true, 
       message: "Ticket generation test successful",
       ticketData: {
-        ticketPdfUrl: ticketData.ticketPdfUrl,
-        cloudinaryPublicId: ticketData.cloudinaryPublicId
+        hasBuffer: !!ticketData.ticketPdfBuffer,
+        generatedAt: ticketData.generatedAt
       }
     });
   } catch (error) {
@@ -51,7 +51,7 @@ router.post("/regenerate/:customBookingId", async (req, res) => {
     const { customBookingId } = req.params;
     const Booking = require("../models/Booking");
     const Ticket = require("../models/Ticket");
-    const { generateAndUploadTicket } = require("../services/ticketService");
+    const { generateTicketPDF } = require("../services/ticketService");
     
     console.log(`[regenerate] Starting regeneration for booking: ${customBookingId}`);
     
@@ -71,15 +71,13 @@ router.post("/regenerate/:customBookingId", async (req, res) => {
     
     // Generate new ticket
     console.log(`[regenerate] Generating new ticket...`);
-    const ticketData = await generateAndUploadTicket(booking);
-    console.log(`[regenerate] Ticket generated, URL: ${ticketData.ticketPdfUrl}`);
+    const ticketData = await generateTicketPDF(booking);
+    console.log(`[regenerate] Ticket generated, buffer size: ${ticketData.ticketPdfBuffer.length}`);
     
-    // Create new ticket record
+    // Create new ticket record (no PDF URL stored)
     const ticket = new Ticket({
       bookingId: booking._id,
       customBookingId: booking.customBookingId,
-      ticketPdfUrl: ticketData.ticketPdfUrl,
-      cloudinaryPublicId: ticketData.cloudinaryPublicId,
       status: "generated"
     });
     
@@ -92,7 +90,6 @@ router.post("/regenerate/:customBookingId", async (req, res) => {
       ticket: {
         id: ticket._id,
         customBookingId: ticket.customBookingId,
-        ticketPdfUrl: ticket.ticketPdfUrl,
         generatedAt: ticket.generatedAt
       }
     });
