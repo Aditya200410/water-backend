@@ -8,6 +8,11 @@ const couponSchema = new mongoose.Schema({
     uppercase: true,
     trim: true
   },
+  name: {
+    type: String,
+    required: true,
+    trim: true
+  },
   discountType: {
     type: String,
     required: true,
@@ -25,6 +30,20 @@ const couponSchema = new mongoose.Schema({
   },
   maxDiscount: {
     type: Number
+  },
+  // New fields for product-specific coupons
+  applicableProducts: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Product'
+  }],
+  isProductSpecific: {
+    type: Boolean,
+    default: false
+  },
+  // New field for coupon description
+  description: {
+    type: String,
+    trim: true
   },
   startDate: {
     type: Date,

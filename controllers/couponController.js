@@ -14,11 +14,24 @@ exports.getAllCoupons = async (req, res) => {
 // Create new coupon
 exports.createCoupon = async (req, res) => {
   try {
-    const { code, name, discountPercentage, maxUses, minOrderAmount, expiryDate, isActive } = req.body;
+    const { 
+      code, 
+      name, 
+      discountType, 
+      discountValue, 
+      maxUses, 
+      minOrderAmount, 
+      expiryDate, 
+      isActive,
+      applicableProducts,
+      isProductSpecific,
+      description,
+      maxDiscount
+    } = req.body;
 
     // Validate required fields
-    if (!code || !discountPercentage || !maxUses || !minOrderAmount || !expiryDate) {
-      return res.status(400).json({ message: "All fields are required" });
+    if (!code || !name || !discountValue || !maxUses || !minOrderAmount || !expiryDate) {
+      return res.status(400).json({ message: "All required fields are missing" });
     }
 
     // Check if coupon code already exists
@@ -29,13 +42,18 @@ exports.createCoupon = async (req, res) => {
 
     const newCoupon = new Coupon({
       code: code.toUpperCase(),
-      discountType: 'percentage',
-      discountValue: Number(discountPercentage),
+      name: name.trim(),
+      discountType: discountType || 'percentage',
+      discountValue: Number(discountValue),
       usageLimit: Number(maxUses),
       minPurchase: Number(minOrderAmount),
       endDate: new Date(expiryDate),
       isActive: isActive !== undefined ? isActive : true,
-      startDate: new Date()
+      startDate: new Date(),
+      applicableProducts: applicableProducts || [],
+      isProductSpecific: isProductSpecific || false,
+      description: description || '',
+      maxDiscount: maxDiscount ? Number(maxDiscount) : undefined
     });
 
     await newCoupon.save();
@@ -49,7 +67,20 @@ exports.createCoupon = async (req, res) => {
 // Update coupon
 exports.updateCoupon = async (req, res) => {
   try {
-    const { code, name, discountPercentage, maxUses, minOrderAmount, expiryDate, isActive } = req.body;
+    const { 
+      code, 
+      name, 
+      discountType, 
+      discountValue, 
+      maxUses, 
+      minOrderAmount, 
+      expiryDate, 
+      isActive,
+      applicableProducts,
+      isProductSpecific,
+      description,
+      maxDiscount
+    } = req.body;
     
     // Check if coupon exists
     const coupon = await Coupon.findById(req.params.id);
@@ -65,17 +96,24 @@ exports.updateCoupon = async (req, res) => {
       }
     }
 
+    const updateData = {
+      code: code ? code.toUpperCase() : coupon.code,
+      name: name ? name.trim() : coupon.name,
+      discountType: discountType || coupon.discountType,
+      discountValue: discountValue ? Number(discountValue) : coupon.discountValue,
+      usageLimit: maxUses ? Number(maxUses) : coupon.usageLimit,
+      minPurchase: minOrderAmount ? Number(minOrderAmount) : coupon.minPurchase,
+      endDate: expiryDate ? new Date(expiryDate) : coupon.endDate,
+      isActive: isActive !== undefined ? isActive : coupon.isActive,
+      applicableProducts: applicableProducts !== undefined ? applicableProducts : coupon.applicableProducts,
+      isProductSpecific: isProductSpecific !== undefined ? isProductSpecific : coupon.isProductSpecific,
+      description: description !== undefined ? description : coupon.description,
+      maxDiscount: maxDiscount !== undefined ? (maxDiscount ? Number(maxDiscount) : undefined) : coupon.maxDiscount
+    };
+
     const updatedCoupon = await Coupon.findByIdAndUpdate(
       req.params.id,
-      {
-        code: code ? code.toUpperCase() : coupon.code,
-        discountType: 'percentage',
-        discountValue: discountPercentage ? Number(discountPercentage) : coupon.discountValue,
-        usageLimit: maxUses ? Number(maxUses) : coupon.usageLimit,
-        minPurchase: minOrderAmount ? Number(minOrderAmount) : coupon.minPurchase,
-        endDate: expiryDate ? new Date(expiryDate) : coupon.endDate,
-        isActive: isActive !== undefined ? isActive : coupon.isActive
-      },
+      updateData,
       { new: true }
     );
 
@@ -103,7 +141,9 @@ exports.deleteCoupon = async (req, res) => {
 // Validate coupon and calculate discounted price
 exports.validateCoupon = async (req, res) => {
   try {
-    const { code, cartTotal } = req.body;
+    const { code, cartTotal, cartItems } = req.body;
+
+    console.log('Coupon validation request:', { code, cartTotal, cartItems });
 
     if (!code || !cartTotal) {
       return res.status(400).json({
@@ -117,7 +157,7 @@ exports.validateCoupon = async (req, res) => {
       isActive: true,
       startDate: { $lte: new Date() },
       endDate: { $gt: new Date() }
-    });
+    }).populate('applicableProducts', 'name price');
 
     if (!coupon) {
       return res.status(404).json({
@@ -125,6 +165,14 @@ exports.validateCoupon = async (req, res) => {
         message: 'Invalid or expired coupon code'
       });
     }
+
+    console.log('Found coupon:', {
+      code: coupon.code,
+      isProductSpecific: coupon.isProductSpecific,
+      applicableProducts: coupon.applicableProducts.length,
+      discountType: coupon.discountType,
+      discountValue: coupon.discountValue
+    });
 
     // Check minimum purchase requirement
     if (cartTotal < coupon.minPurchase) {
@@ -142,8 +190,55 @@ exports.validateCoupon = async (req, res) => {
       });
     }
 
-    // Calculate discount
-    let discountAmount = (cartTotal * coupon.discountValue) / 100;
+    let discountAmount = 0;
+    let applicableItems = [];
+
+    // If coupon is product-specific, calculate discount only for applicable products
+    if (coupon.isProductSpecific && coupon.applicableProducts.length > 0) {
+      if (!cartItems || !Array.isArray(cartItems)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Cart items are required for product-specific coupons'
+        });
+      }
+
+      // Find applicable items in cart
+      const applicableProductIds = coupon.applicableProducts.map(p => p._id.toString());
+      console.log('Applicable product IDs:', applicableProductIds);
+      console.log('Cart items:', cartItems);
+      
+      applicableItems = cartItems.filter(item => {
+        const itemProductId = item.product._id || item.product;
+        console.log('Checking item product ID:', itemProductId, 'against applicable IDs');
+        return applicableProductIds.includes(itemProductId.toString());
+      });
+
+      if (applicableItems.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'This coupon is not applicable to the selected product. Please check if the coupon is valid for this item.'
+        });
+      }
+
+      // Calculate total for applicable items
+      const applicableTotal = applicableItems.reduce((sum, item) => {
+        return sum + (item.price * item.quantity);
+      }, 0);
+
+      // Calculate discount based on type
+      if (coupon.discountType === 'percentage') {
+        discountAmount = (applicableTotal * coupon.discountValue) / 100;
+      } else {
+        discountAmount = coupon.discountValue;
+      }
+    } else {
+      // Apply discount to entire cart (for non-product-specific coupons)
+      if (coupon.discountType === 'percentage') {
+        discountAmount = (cartTotal * coupon.discountValue) / 100;
+      } else {
+        discountAmount = coupon.discountValue;
+      }
+    }
     
     // Apply max discount if specified
     if (coupon.maxDiscount && discountAmount > coupon.maxDiscount) {
@@ -159,6 +254,7 @@ exports.validateCoupon = async (req, res) => {
         coupon,
         discountAmount,
         finalPrice,
+        applicableItems: applicableItems.length > 0 ? applicableItems : null,
         message: `Coupon applied successfully! You saved ₹${discountAmount.toFixed(2)}`
       }
     });
