@@ -34,7 +34,7 @@ exports.register = async (req, res) => {
     // Generate unique sellerToken
     const sellerToken = uuidv4();
     // Create websiteLink with sellerToken
-    const websiteLink = `${'https://www.rikocraft.com/'}?seller=${sellerToken}`;
+    const websiteLink = `${'https://www.waterparkchalo.com/'}?seller=${sellerToken}`;
     // Generate QR code for websiteLink
     const qrCode = await QRCode.toDataURL(websiteLink);
     // Create seller with all info including images
@@ -585,7 +585,7 @@ exports.updateUniqueFields = async (req, res) => {
     // Generate unique fields if they don't exist
     if (!seller.sellerToken || !seller.websiteLink) {
       const sellerToken = `seller_${seller._id.toString().slice(-8)}_${Date.now()}`;
-      const websiteLink = `${'https://rikocraft.com'}?seller=${sellerToken}`;
+      const websiteLink = `${'https://waterparkchalo.com'}?seller=${sellerToken}`;
       
       const updatedSeller = await Seller.findByIdAndUpdate(
         seller._id,
