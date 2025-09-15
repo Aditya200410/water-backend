@@ -34,6 +34,7 @@ const allowedOrigins = [
   'http://localhost:5174',
   'https://waterpark-frontend.vercel.app',
   'https://water-admin-lyart.vercel.app',
+  'https://waterparkchalo.com',
   
 ];
 
