@@ -904,9 +904,14 @@ exports.getBookingWithTicket = async (req, res) => {
 // ----------------------------
 exports.razorpayWebhook = async (req, res) => {
   console.log("[razorpayWebhook] Webhook received:", req.body);
+  console.log("[razorpayWebhook] Headers:", req.headers);
+  console.log("[razorpayWebhook] Method:", req.method);
+  console.log("[razorpayWebhook] URL:", req.url);
 
   try {
     const { event, payload } = req.body;
+    console.log("[razorpayWebhook] Event:", event);
+    console.log("[razorpayWebhook] Payload:", payload);
 
     // Verify webhook signature for security
     const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
@@ -927,6 +932,14 @@ exports.razorpayWebhook = async (req, res) => {
 
     // Handle payment captured event
     if (event === 'payment.captured') {
+      console.log("[razorpayWebhook] Processing payment.captured event");
+      
+      // Check if payload structure is correct
+      if (!payload || !payload.payment || !payload.payment.entity) {
+        console.error("[razorpayWebhook] Invalid payload structure:", payload);
+        return res.status(400).json({ success: false, message: "Invalid payload structure" });
+      }
+      
       const { payment, order } = payload.payment.entity;
       const { order: orderEntity } = payload.order.entity;
       
@@ -1177,6 +1190,7 @@ exports.razorpayWebhook = async (req, res) => {
 
     // Handle other events if needed
     console.log("[razorpayWebhook] Unhandled event:", event);
+    console.log("[razorpayWebhook] Full payload:", JSON.stringify(payload, null, 2));
     return res.status(200).json({ success: true, message: "Event received but not processed" });
 
   } catch (error) {
