@@ -243,14 +243,14 @@ const updateProductWithFiles = async (req, res) => {
       weight: productData.weight || existingProduct.weight,
       utility: productData.utility || existingProduct.utility,
       care: productData.care || existingProduct.care,
-      advanceprice: productData.advanceprice ? parseFloat(productData.advanceprice) : existingProduct.advanceprice,
+      advanceprice: productData.advanceprice ? (isNaN(parseFloat(productData.advanceprice)) ? existingProduct.advanceprice : parseFloat(productData.advanceprice)) : existingProduct.advanceprice,
       terms: productData.terms || existingProduct.terms,
-      price: productData.price ? parseFloat(productData.price) : existingProduct.price,
-      regularprice: productData.regularprice ? parseFloat(productData.regularprice) : existingProduct.regularprice,
-      weekendadvance: productData.weekendadvance ? parseFloat(productData.weekendadvance) : existingProduct.weekendadvance,
-      adultprice: productData.adultprice ? parseFloat(productData.adultprice) : existingProduct.adultprice,
-      childprice: productData.childprice ? parseFloat(productData.childprice) : existingProduct.childprice,
-      weekendprice: productData.weekendprice ? parseFloat(productData.weekendprice) : existingProduct.weekendprice,
+      // price field will be handled separately below
+      regularprice: productData.regularprice ? (isNaN(parseFloat(productData.regularprice)) ? existingProduct.regularprice : parseFloat(productData.regularprice)) : existingProduct.regularprice,
+      weekendadvance: productData.weekendadvance ? (isNaN(parseFloat(productData.weekendadvance)) ? existingProduct.weekendadvance : parseFloat(productData.weekendadvance)) : existingProduct.weekendadvance,
+      adultprice: productData.adultprice ? (isNaN(parseFloat(productData.adultprice)) ? existingProduct.adultprice : parseFloat(productData.adultprice)) : existingProduct.adultprice,
+      childprice: productData.childprice ? (isNaN(parseFloat(productData.childprice)) ? existingProduct.childprice : parseFloat(productData.childprice)) : existingProduct.childprice,
+      weekendprice: productData.weekendprice ? (isNaN(parseFloat(productData.weekendprice)) ? existingProduct.weekendprice : parseFloat(productData.weekendprice)) : existingProduct.weekendprice,
       paymentType: productData.paymentType || existingProduct.paymentType || 'advance',
       maplink: productData.maplink || existingProduct.maplink,
       waternumber: productData.waternumber || existingProduct.waternumber,
@@ -265,6 +265,32 @@ const updateProductWithFiles = async (req, res) => {
       stock: typeof productData.stock !== 'undefined' ? Number(productData.stock) : existingProduct.stock,
       specialPrices: productData.specialPrices || existingProduct.specialPrices || new Map()
     };
+
+    // Handle weekendChildPrice specifically (mapped from frontend as 'price')
+    console.log('=== Weekend Child Price Debug ===');
+    console.log('productData.price:', productData.price);
+    console.log('productData.price type:', typeof productData.price);
+    console.log('productData.price !== undefined:', productData.price !== undefined);
+    console.log('productData.price !== "":', productData.price !== '');
+    console.log('existingProduct.price:', existingProduct.price);
+    
+    // Always update the price field if it's provided in the request
+    // This handles cases where price might be 0 or empty string
+    if (productData.price !== undefined) {
+      const newPrice = productData.price === '' ? 0 : parseFloat(productData.price);
+      // Check if the parsed value is NaN and handle it
+      if (isNaN(newPrice)) {
+        console.warn('Invalid price value received:', productData.price, 'keeping existing price');
+        updatedProduct.price = existingProduct.price;
+      } else {
+        updatedProduct.price = newPrice;
+        console.log('Setting new weekend child price to:', updatedProduct.price);
+      }
+    } else {
+      // If no price field provided at all, keep existing price
+      updatedProduct.price = existingProduct.price;
+      console.log('Keeping existing weekend child price:', updatedProduct.price);
+    }
 
     const result = await Product.findByIdAndUpdate(id, updatedProduct, { new: true });
     res.json({ message: "Product updated successfully", product: result });

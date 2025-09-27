@@ -14,8 +14,10 @@ exports.getTicket = async (req, res) => {
     
     const { bookingId } = req.params;
     
-    // Find the booking directly
-    let booking = await Booking.findOne({ customBookingId: bookingId });
+    // Find the booking directly - case-insensitive search
+    let booking = await Booking.findOne({ 
+      customBookingId: { $regex: new RegExp(`^${bookingId}$`, 'i') } 
+    });
     
     if (!booking) {
       booking = await Booking.findById(bookingId);
