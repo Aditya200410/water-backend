@@ -35,6 +35,7 @@ const allowedOrigins = [
   'https://waterpark-frontend.vercel.app',
   'https://water-admin-lyart.vercel.app',
   'https://www.waterparkchalo.com',
+  'https://waterparkchalo.com',
  
   
 ];

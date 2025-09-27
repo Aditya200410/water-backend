@@ -3,12 +3,13 @@ const router = express.Router();
 const bookingController = require("../controllers/bookingController");
 
 router.post("/create", bookingController.createBooking);
-
+router.post("/webhook/razorpay", bookingController.razorpayWebhook); // Razorpay webhook endpoint
 router.post("/verify", bookingController.verifyPayment);
 router.get('/email', bookingController.getOrdersByEmail);
 router.get('/user-bookings', bookingController.getBookingsByEmailOrPhone); // New route for email OR phone
 // New route for getting booking with ticket details (for sharing)
 router.get("/ticket/:customBookingId", bookingController.getBookingWithTicket);
+router.get("/status/:customBookingId", bookingController.getBookingStatus); // Check booking status (any status)
 router.get("/:customBookingId", bookingController.getSingleBooking);
 router.get("/", bookingController.getAllBookings);
 
