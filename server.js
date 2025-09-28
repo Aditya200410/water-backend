@@ -80,18 +80,16 @@ app.use((req, res, next) => {
   }
 });
 
-// Middleware for parsing JSON (except for webhook endpoints)
-app.use((req, res, next) => {
-  if (req.path === '/api/bookings/webhook/razorpay') {
-    // For webhook endpoints, we need raw body for signature verification
-    express.raw({ type: 'application/json' })(req, res, next);
-  } else {
-    // For all other endpoints, use regular JSON parsing
-    express.json()(req, res, next);
-  }
-});
-
+// Use JSON parsing for all routes by default
+app.use(express.json());
 app.use(cookieParser());
+
+// IMPORTANT: Define webhook route with raw body parsing BEFORE other routes
+// This ensures the webhook gets raw body for signature verification
+app.post('/api/bookings/webhook/razorpay', 
+  express.raw({ type: 'application/json' }), 
+  require('./controllers/bookingController').razorpayWebhook
+);
 
 // Ensure data directories exist
 const dataDir = path.join(__dirname, 'data');
