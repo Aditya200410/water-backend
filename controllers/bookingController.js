@@ -406,7 +406,7 @@ exports.verifyPayment = async (req, res) => {
     console.log("[verifyPayment] Payment verified successfully");
 
     // ✅ Use the readable customBookingId for the frontend URL
-    const frontendUrl = `https://waterparkchalo.com/ticket?bookingId=${booking.customBookingId}`;
+    const frontendUrl = `https://www.waterparkchalo.com/ticket?bookingId=${booking.customBookingId}`;
     console.log("[verifyPayment] Ticket URL:", frontendUrl);
 
     // ✅ Send all notifications in parallel for faster response
@@ -1024,7 +1024,7 @@ exports.razorpayWebhook = async (req, res) => {
       console.log("[razorpayWebhook] Booking confirmed:", booking.customBookingId);
 
       // Generate frontend URL
-      const frontendUrl = `https://waterparkchalo.com/ticket?bookingId=${booking.customBookingId}`;
+      const frontendUrl = `https://www.waterparkchalo.com/ticket?bookingId=${booking.customBookingId}`;
 
       // Respond immediately to webhook - don't wait for notifications
       res.status(200).json({ 
