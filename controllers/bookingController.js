@@ -973,7 +973,7 @@ exports.razorpayWebhook = async (req, res) => {
         return res.status(200).json({ success: true, message: "Booking already confirmed" });
       }
 
-      // Update booking status
+      // Update booking status FIRST - this is critical for frontend polling
       booking.paymentStatus = "Completed";
       booking.paymentId = paymentEntity.id;
       booking.paymentType = "Razorpay";
@@ -984,8 +984,16 @@ exports.razorpayWebhook = async (req, res) => {
       // Generate frontend URL
       const frontendUrl = `https://waterparkchalo.com/ticket?bookingId=${booking.customBookingId}`;
 
-      // Send all notifications in parallel
-      console.log("[razorpayWebhook] Sending notifications in parallel...");
+      // Respond immediately to webhook - don't wait for notifications
+      res.status(200).json({ 
+        success: true, 
+        message: "Payment processed successfully",
+        bookingId: booking.customBookingId,
+        frontendUrl
+      });
+
+      // Send all notifications in parallel AFTER responding to webhook
+      console.log("[razorpayWebhook] Sending notifications in parallel (after response)...");
       
       const notificationPromises = [
         // Customer WhatsApp
@@ -1184,16 +1192,9 @@ exports.razorpayWebhook = async (req, res) => {
         ).catch(err => console.error("[razorpayWebhook] Email error:", err.message))
       ];
 
-      // Don't wait for notifications to complete - respond immediately
+      // Process notifications in background
       Promise.allSettled(notificationPromises).then(results => {
         console.log("[razorpayWebhook] All notifications completed:", results.map(r => r.status));
-      });
-
-      return res.status(200).json({ 
-        success: true, 
-        message: "Payment processed successfully",
-        bookingId: booking.customBookingId,
-        frontendUrl
       });
     }
 
