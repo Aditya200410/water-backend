@@ -612,14 +612,7 @@ sendEmail(
       console.log("[verifyPayment] All notifications completed:", results.map(r => r.status));
     });
 
-    const shouldRedirect =
-      typeof redirect === "string"
-        ? redirect.toLowerCase() === "true"
-        : Boolean(redirect);
-    if (shouldRedirect) {
-      console.log("[verifyPayment] Redirecting to frontend URL.");
-      return res.redirect(frontendUrl);
-    }
+   
 
     return res
       .status(200)
@@ -640,6 +633,31 @@ sendEmail(
 
 // --- The rest of your controller functions (getSingleBooking, getAllBookings, etc.) remain unchanged. ---
 // --- I am including them here so you can copy-paste the whole file. ---
+
+// ----------------------------
+// Get Single Booking (Any status - for verification)
+// ----------------------------
+exports.getSingleBookingAnyStatus = async (req, res) => {
+  console.log("[getSingleBookingAnyStatus] Params:", req.params);
+
+  try {
+    const { customBookingId } = req.params;
+    const booking = await Booking.findOne({ customBookingId: customBookingId });
+    if (!booking) {
+      console.warn("[getSingleBookingAnyStatus] Booking not found:", customBookingId);
+      return res
+        .status(404)
+        .json({ success: false, message: "Booking not found." });
+    }
+    console.log("[getSingleBookingAnyStatus] Booking found:", booking.customBookingId, "Status:", booking.paymentStatus);
+    return res.status(200).json({ success: true, booking });
+  } catch (error) {
+    console.error("[getSingleBookingAnyStatus] Error:", error);
+    return res
+      .status(500)
+      .json({ success: false, message: "Error fetching booking." });
+  }
+};
 
 // ----------------------------
 // Get Single Booking (Completed only)
@@ -908,6 +926,7 @@ exports.razorpayWebhook = async (req, res) => {
   console.log("[razorpayWebhook] Headers:", req.headers);
   console.log("[razorpayWebhook] Method:", req.method);
   console.log("[razorpayWebhook] URL:", req.url);
+  console.log("[razorpayWebhook] Timestamp:", new Date().toISOString());
 
   try {
     // Handle raw body - should be Buffer or string
@@ -1278,5 +1297,31 @@ exports.testRazorpayConfig = async (req, res) => {
         message: "Razorpay test failed",
         error: error.message,
       });
+  }
+};
+
+// ----------------------------
+// Test Webhook Endpoint
+// ----------------------------
+exports.testWebhook = async (req, res) => {
+  console.log("[testWebhook] Webhook test endpoint called");
+  console.log("[testWebhook] Request body:", req.body);
+  console.log("[testWebhook] Headers:", req.headers);
+  
+  try {
+    return res.status(200).json({
+      success: true,
+      message: "Webhook test endpoint is working",
+      timestamp: new Date().toISOString(),
+      body: req.body,
+      headers: req.headers
+    });
+  } catch (error) {
+    console.error("[testWebhook] Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Webhook test failed",
+      error: error.message
+    });
   }
 };

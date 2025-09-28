@@ -9,10 +9,12 @@ router.get('/user-bookings', bookingController.getBookingsByEmailOrPhone); // Ne
 // New route for getting booking with ticket details (for sharing)
 router.get("/ticket/:customBookingId", bookingController.getBookingWithTicket);
 router.get("/status/:customBookingId", bookingController.getBookingStatus); // Check booking status (any status)
+router.get("/any/:customBookingId", bookingController.getSingleBookingAnyStatus); // Get booking any status (for verification)
 router.get("/:customBookingId", bookingController.getSingleBooking);
 router.get("/", bookingController.getAllBookings);
 
 router.post("/mine", bookingController.getUserBookings); // uses auth or body.email
 router.get("/test/razorpay/config", bookingController.testRazorpayConfig);
+router.post("/test/webhook", bookingController.testWebhook);
 
 module.exports = router;
