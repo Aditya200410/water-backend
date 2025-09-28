@@ -9,7 +9,6 @@ router.get('/user-bookings', bookingController.getBookingsByEmailOrPhone); // Ne
 // New route for getting booking with ticket details (for sharing)
 router.get("/ticket/:customBookingId", bookingController.getBookingWithTicket);
 router.get("/status/:customBookingId", bookingController.getBookingStatus); // Check booking status (any status)
-router.get("/details/:customBookingId", bookingController.getBookingDetails); // Get booking details (any status) - for retry lost payment
 router.get("/:customBookingId", bookingController.getSingleBooking);
 router.get("/", bookingController.getAllBookings);
 

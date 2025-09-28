@@ -702,54 +702,6 @@ exports.getBookingStatus = async (req, res) => {
   }
 };
 
-// ----------------------------
-// Get Booking Details (Any status) - For retry lost payment
-// ----------------------------
-exports.getBookingDetails = async (req, res) => {
-  console.log("[getBookingDetails] Params:", req.params);
-
-  try {
-    const { customBookingId } = req.params;
-    const booking = await Booking.findOne({ customBookingId: customBookingId });
-    
-    if (!booking) {
-      console.warn("[getBookingDetails] Booking not found:", customBookingId);
-      return res
-        .status(404)
-        .json({ success: false, message: "Booking not found." });
-    }
-    
-    console.log("[getBookingDetails] Booking found:", booking.customBookingId, "Status:", booking.paymentStatus);
-    
-    return res.status(200).json({ 
-      success: true, 
-      booking: {
-        _id: booking._id,
-        customBookingId: booking.customBookingId,
-        paymentStatus: booking.paymentStatus,
-        paymentId: booking.paymentId,
-        bookingDate: booking.bookingDate,
-        name: booking.name,
-        email: booking.email,
-        phone: booking.phone,
-        waternumber: booking.waternumber,
-        adults: booking.adults,
-        children: booking.children,
-        date: booking.date,
-        advanceAmount: booking.advanceAmount,
-        totalAmount: booking.totalAmount,
-        leftamount: booking.leftamount,
-        waterparkName: booking.waterparkName
-      }
-    });
-  } catch (error) {
-    console.error("[getBookingDetails] Error:", error);
-    return res
-      .status(500)
-      .json({ success: false, message: "Error fetching booking details." });
-  }
-};
-
 //get booking by email
 // Get all orders for a specific user by email
 exports.getOrdersByEmail = async (req, res) => {
