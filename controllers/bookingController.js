@@ -903,24 +903,44 @@ exports.getBookingWithTicket = async (req, res) => {
 // Razorpay Webhook Handler
 // ----------------------------
 exports.razorpayWebhook = async (req, res) => {
-  console.log("[razorpayWebhook] Webhook received - Raw body length:", req.body?.length);
+  console.log("[razorpayWebhook] Webhook received - Body type:", typeof req.body);
+  console.log("[razorpayWebhook] Body length:", req.body?.length);
   console.log("[razorpayWebhook] Headers:", req.headers);
   console.log("[razorpayWebhook] Method:", req.method);
   console.log("[razorpayWebhook] URL:", req.url);
 
   try {
-    // Parse the raw body
-    const rawBody = req.body.toString();
+    // Handle raw body - should be Buffer or string
+    let rawBody;
+    if (Buffer.isBuffer(req.body)) {
+      rawBody = req.body.toString('utf8');
+    } else if (typeof req.body === 'string') {
+      rawBody = req.body;
+    } else {
+      console.error("[razorpayWebhook] Invalid body type:", typeof req.body);
+      return res.status(400).json({ success: false, message: "Invalid body format" });
+    }
+    
+    console.log("[razorpayWebhook] Raw body:", rawBody);
     const webhookData = JSON.parse(rawBody);
     const { event, payload } = webhookData;
     
     console.log("[razorpayWebhook] Event:", event);
     console.log("[razorpayWebhook] Payload:", payload);
 
-    // Verify webhook signature for security
+    // Verify webhook signature for security (only if secret is configured)
     const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
-    if (webhookSecret) {
+    console.log("[razorpayWebhook] Webhook secret configured:", !!webhookSecret);
+    console.log("[razorpayWebhook] Webhook secret value:", webhookSecret ? "SET" : "NOT SET");
+    
+    if (webhookSecret && webhookSecret.trim() !== '') {
+      console.log("[razorpayWebhook] Proceeding with signature verification");
       const receivedSignature = req.headers['x-razorpay-signature'];
+      
+      if (!receivedSignature) {
+        console.warn("[razorpayWebhook] No signature provided");
+        return res.status(400).json({ success: false, message: "No signature provided" });
+      }
       
       const expectedSignature = crypto
         .createHmac('sha256', webhookSecret)
@@ -937,6 +957,9 @@ exports.razorpayWebhook = async (req, res) => {
         console.warn("[razorpayWebhook] Invalid webhook signature");
         return res.status(400).json({ success: false, message: "Invalid signature" });
       }
+    } else {
+      console.log("[razorpayWebhook] No webhook secret configured, skipping signature verification");
+      // Don't require signature when no secret is configured
     }
 
     // Handle payment captured event

@@ -80,16 +80,16 @@ app.use((req, res, next) => {
   }
 });
 
-// Use JSON parsing for all routes by default
-app.use(express.json());
-app.use(cookieParser());
-
-// IMPORTANT: Define webhook route with raw body parsing BEFORE other routes
+// IMPORTANT: Define webhook route with raw body parsing BEFORE JSON parsing
 // This ensures the webhook gets raw body for signature verification
 app.post('/api/bookings/webhook/razorpay', 
   express.raw({ type: 'application/json' }), 
   require('./controllers/bookingController').razorpayWebhook
 );
+
+// Use JSON parsing for all OTHER routes
+app.use(express.json());
+app.use(cookieParser());
 
 // Ensure data directories exist
 const dataDir = path.join(__dirname, 'data');
