@@ -4,29 +4,30 @@ const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
 const path = require("path");
-const fs = require("fs");
-const cookieParser = require("cookie-parser");
 
-// Import routes
+const cookieParser = require("cookie-parser");
 const shopRoutes = require("./routes/shop");
 const orderRoutes = require("./routes/orders");
 const blogRoutes = require("./routes/blogs");
-const authRoutes = require('./routes/auth');
-const adminAuthRoutes = require('./routes/adminAuth');
-const lovedRoutes = require('./routes/loved');
+const authRoutes = require('./routes/auth'); // Assuming your auth routes are here
+const adminAuthRoutes = require('./routes/adminAuth'); // Admin authentication routes
+const lovedRoutes = require('./routes/loved'); // Assuming your loved routes are here
 const categoryRoutes = require('./routes/category');
 const featuredProductRoutes = require('./routes/featuredProduct');
 const bestSellerRoutes = require('./routes/bestSeller');
 const cartRoutes = require('./routes/cart');
+const fs = require('fs');
 const heroCarouselRoutes = require('./routes/heroCarousel');
-const couponRoutes = require('./routes/coupon');
-const bookingRoutes = require('./routes/bookingRoutes');
 
+const couponRoutes = require('./routes/coupon');
+const crypto = require('crypto');
+const bookingRoutes = require('./routes/bookingRoutes');
+const settingsController = require('./controllers/settingsController');
 const app = express();
 
-// ---------------------------
-// 1️⃣ CORS Setup
-// ---------------------------
+
+
+
 const allowedOrigins = [
   'http://localhost:5173',
   'https://admin.waterparkchalo.com',
@@ -36,9 +37,10 @@ const allowedOrigins = [
   'https://waterparkchalo.com'
 ];
 
+
 app.use(cors({
   origin: function(origin, callback){
-    if (!origin) return callback(null, true); // allow server-to-server requests like curl or Postman
+    if (!origin) return callback(null, true); // allow postman or curl
     if (allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
@@ -47,29 +49,26 @@ app.use(cors({
     }
   },
   credentials: true,
+  methods: ['GET','POST','PUT','DELETE','OPTIONS','PATCH'],
+  allowedHeaders: ['Content-Type','Authorization','X-Requested-With','Accept','Origin']
 }));
 
-// ---------------------------
-// 2️⃣ Razorpay Webhook
-// ---------------------------
-// Must come BEFORE express.json() to get raw body
+// IMPORTANT: Define webhook route with raw body parsing BEFORE JSON parsing
+// This ensures the webhook gets raw body for signature verification
 app.post('/api/bookings/webhook/razorpay', 
   express.raw({ type: 'application/json' }), 
   require('./controllers/bookingController').razorpayWebhook
 );
 
-// ---------------------------
-// 3️⃣ Middleware
-// ---------------------------
+// Use JSON parsing for all OTHER routes
 app.use(express.json());
 app.use(cookieParser());
 
-// ---------------------------
-// 4️⃣ Ensure data directories exist
-// ---------------------------
+// Ensure data directories exist
 const dataDir = path.join(__dirname, 'data');
 const userProductDir = path.join(dataDir, 'userproduct');
 
+// Create directories if they don't exist
 [dataDir, userProductDir].forEach(dir => {
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
@@ -77,42 +76,52 @@ const userProductDir = path.join(dataDir, 'userproduct');
   }
 });
 
-// ---------------------------
-// 5️⃣ Serve static files
-// ---------------------------
-app.use('/pawnbackend/data', express.static(path.join(__dirname, 'data'), {
+// Serve static files with proper MIME types
+app.use('/pawnbackend/data', (req, res, next) => {
+  const filePath = path.join(__dirname, 'data', req.path);
+  const ext = path.extname(filePath).toLowerCase();
+  
+  // Set proper content type for videos and images
+  if (ext === '.mp4') {
+    res.setHeader('Content-Type', 'video/mp4');
+  } else if (ext === '.png') {
+    res.setHeader('Content-Type', 'image/png');
+  } else if (ext === '.jpg' || ext === '.jpeg') {
+    res.setHeader('Content-Type', 'image/jpeg');
+  } else if (ext === '.gif') {
+    res.setHeader('Content-Type', 'image/gif');
+  }
+  
+  next();
+}, express.static(path.join(__dirname, 'data'), {
   fallthrough: true,
   maxAge: '1h'
 }));
 
-// ---------------------------
-// 6️⃣ MongoDB Connection
-// ---------------------------
-const MONGODB_URI = process.env.MONGODB_URI || 
-  "mongodb+srv://lightyagami98k:UN1cr0DnJwISvvgs@cluster0.uwkswmj.mongodb.net/waterpark?retryWrites=true&w=majority&appName=Cluster0";
+// MongoDB Connection URL from environment variable
+const MONGODB_URI = process.env.MONGODB_URI || "mongodb+srv://lightyagami98k:UN1cr0DnJwISvvgs@cluster0.uwkswmj.mongodb.net/waterpark?retryWrites=true&w=majority&appName=Cluster0";
 
+// Connect to MongoDB
 mongoose.connect(MONGODB_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true
-})
-.then(() => console.log("MongoDB connected"))
-.catch(err => console.error("MongoDB connection error:", err));
+    useNewUrlParser: true,
+    useUnifiedTopology: true
+}).then(() => console.log("MongoDB connected to:", MONGODB_URI))
+  .catch(err => console.error("MongoDB connection error:", err));
 
-// ---------------------------
-// 7️⃣ API Routes
-// ---------------------------
+// API Routes
 app.use("/api/shop", shopRoutes);
 app.use("/api/orders", orderRoutes);
 app.use('/api/bestseller', bestSellerRoutes);
 app.use('/api/auth', authRoutes);
-app.use('/api/admin/auth', adminAuthRoutes);
+app.use('/api/admin/auth', adminAuthRoutes); // Admin authentication routes
 app.use('/api/loved', lovedRoutes);
 app.use('/api/categories', categoryRoutes);
 app.use('/api/featured-products', featuredProductRoutes);
 app.use('/api/cart', cartRoutes);
 app.use('/api/hero-carousel', heroCarouselRoutes);
+
 app.use('/api/coupons', couponRoutes);
-app.use("/api/blog", blogRoutes);
+app.use("/api/blog", blogRoutes); // Blog routes
 app.use('/api/data-page', require('./routes/dataPage'));
 app.use('/api/payment', require('./routes/payment'));
 app.use('/api/withdrawal', require('./routes/withdrawal'));
@@ -120,12 +129,11 @@ app.use('/api/commission', require('./routes/commission'));
 app.use('/api/reviews', require('./routes/reviews'));
 app.use('/api/settings', require('./routes/settings'));
 app.use('/api/msg91', require('./routes/msg91'));
+app.use('/api/blog', require('./routes/blogs')); // Blog routes
 app.use('/api/bookings', bookingRoutes);
 app.use('/api/tickets', require('./routes/tickets'));
 
-// ---------------------------
-// 8️⃣ Health Check & CORS Test
-// ---------------------------
+// Health check endpoint
 app.get('/health', (req, res) => {
   res.status(200).json({
     status: 'OK',
@@ -136,6 +144,7 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Test endpoint for CORS
 app.get('/test-cors', (req, res) => {
   res.status(200).json({
     message: 'CORS is working correctly',
@@ -144,22 +153,25 @@ app.get('/test-cors', (req, res) => {
   });
 });
 
-// ---------------------------
-// 9️⃣ Error handling
-// ---------------------------
+// Error handling middleware
 app.use((err, req, res, next) => {
-  console.error('Error:', err);
-  console.error('Stack:', err.stack);
-  res.status(500).json({ 
-    message: 'Something went wrong!',
-    error: process.env.NODE_ENV === 'development' ? err.message : 'Internal server error'
-  });
+    console.error('Error:', err);
+    console.error('Stack:', err.stack);
+    res.status(500).json({ 
+        message: 'Something went wrong!',
+        error: process.env.NODE_ENV === 'development' ? err.message : 'Internal server error'
+    });
 });
 
-// ---------------------------
-// 10️⃣ Start Server
-// ---------------------------
+// Port from environment variable
 const PORT = process.env.PORT || 5175;
-app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
-});
+app.listen(PORT, async () => {
+    console.log(`Server is running on port ${PORT}`);
+    
+    // Initialize default settings
+    
+}); 
+
+
+
+
