@@ -80,8 +80,16 @@ app.use((req, res, next) => {
   }
 });
 
-// IMPORTANT: Define webhook route with raw body parsing BEFORE JSON parsing
-// This ensures the webhook gets raw body for signature verification
+// IMPORTANT: Define webhook routes with raw body parsing BEFORE JSON parsing
+// This ensures the webhooks get raw body for signature verification
+
+// Razorpay webhook (new dedicated controller)
+app.post('/api/razorpay/webhook', 
+  express.raw({ type: 'application/json' }), 
+  require('./controllers/razorpayController').webhookHandler
+);
+
+// Legacy booking webhook (keeping for backward compatibility)
 app.post('/api/bookings/webhook/razorpay', 
   express.raw({ type: 'application/json' }), 
   require('./controllers/bookingController').razorpayWebhook
@@ -159,6 +167,7 @@ app.use('/api/msg91', require('./routes/msg91'));
 app.use('/api/blog', require('./routes/blogs')); // Blog routes
 app.use('/api/bookings', bookingRoutes);
 app.use('/api/tickets', require('./routes/tickets'));
+app.use('/api/razorpay', require('./routes/razorpay'));
 
 // Health check endpoint
 app.get('/health', (req, res) => {
