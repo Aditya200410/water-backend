@@ -1255,318 +1255,48 @@ exports.razorpayWebhook = async (req, res) => {
   }
 };
 
-import crypto from "crypto";
-import Booking from "../models/Booking.js"; // adjust path as per your project
-import { sendWhatsAppMessage, selfWhatsAppMessage, parkWhatsAppMessage } from "../utils/whatsapp.js";
-import { sendEmail } from "../utils/email.js";
-
-// Important: in server.js / app.js
-// app.use("/payment/webhook", express.raw({ type: "application/json" }));
-
-export const razorpayWebhook = async (req, res) => {
-  console.log("[razorpayWebhook] Webhook received:", new Date().toISOString());
-
+exports.testRazorpayConfig = async (req, res) => {
+  console.log("[testRazorpayConfig] Testing Razorpay setup...");
   try {
-    // ✅ Use raw buffer for signature verification
-    const rawBody = req.body.toString("utf8");
-    const webhookData = JSON.parse(rawBody);
+    const config = {
+      key_id: process.env.RAZORPAY_KEY_ID ? "Configured" : "Missing",
+      key_secret: process.env.RAZORPAY_KEY_SECRET ? "Configured" : "Missing",
+      webhook_secret: process.env.RAZORPAY_WEBHOOK_SECRET ? "Configured" : "Missing",
+      razorpay_initialized: razorpay ? "Yes" : "No",
+    };
+    console.log("[testRazorpayConfig] Config:", config);
 
-    const { event, payload } = webhookData;
-    console.log("[razorpayWebhook] Event:", event);
-
-    // ✅ Signature verification
-    const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
-    if (!webhookSecret) {
-      console.error("[razorpayWebhook] Webhook secret not configured!");
-      return res.status(500).json({ success: false, message: "Webhook secret missing" });
+    if (!razorpay) {
+      console.warn("[testRazorpayConfig] Razorpay not configured.");
+      return res
+        .status(500)
+        .json({ success: false, message: "Razorpay not configured", config });
     }
 
-    const receivedSignature = req.headers["x-razorpay-signature"];
-    if (!receivedSignature) {
-      console.warn("[razorpayWebhook] No signature provided");
-      return res.status(400).json({ success: false, message: "No signature provided" });
-    }
-
-    const expectedSignature = crypto
-      .createHmac("sha256", webhookSecret)
-      .update(rawBody)
-      .digest("hex");
-
-    if (receivedSignature !== expectedSignature) {
-      console.warn("[razorpayWebhook] Invalid webhook signature");
-      return res.status(400).json({ success: false, message: "Invalid signature" });
-    }
-
-    // ✅ Handle events
-    if (event === "payment.captured") {
-      console.log("[razorpayWebhook] Processing payment.captured event");
-
-      // Safeguard payload
-      if (!payload?.payment?.entity) {
-        console.error("[razorpayWebhook] Invalid payload structure:", payload);
-        return res.status(400).json({ success: false, message: "Invalid payload structure" });
-      }
-
-      const paymentEntity = payload.payment.entity;
-      const orderEntity = payload.order?.entity;
-
-      if (!orderEntity) {
-        console.warn("[razorpayWebhook] Order entity missing in payload");
-        return res.status(400).json({ success: false, message: "Order entity missing" });
-      }
-
-      console.log("[razorpayWebhook] Payment captured:", {
-        paymentId: paymentEntity.id,
-        orderId: orderEntity.id,
-        amount: paymentEntity.amount,
-        status: paymentEntity.status,
-      });
-
-      // Lookup booking
-      const booking = await Booking.findById(orderEntity.receipt);
-      if (!booking) {
-        console.warn("[razorpayWebhook] Booking not found for order:", orderEntity.receipt);
-        return res.status(404).json({ success: false, message: "Booking not found" });
-      }
-
-      if (booking.paymentStatus === "Completed") {
-        console.log("[razorpayWebhook] Booking already confirmed:", booking.customBookingId);
-        return res.status(200).json({ success: true, message: "Booking already confirmed" });
-      }
-
-      // ✅ Update booking
-      booking.paymentStatus = "Completed";
-      booking.paymentId = paymentEntity.id;
-      booking.paymentType = "Razorpay";
-      await booking.save();
-
-      console.log("[razorpayWebhook] Booking confirmed:", booking.customBookingId);
-
-      // Build frontend URL
-      const frontendUrl = `https://www.waterparkchalo.com/ticket?bookingId=${booking.customBookingId}`;
-
-      // Respond immediately
-      res.status(200).json({
-        success: true,
-        message: "Payment processed successfully",
-        bookingId: booking.customBookingId,
-        frontendUrl,
-      });
-
-      // ✅ Run notifications in background
-      (async () => {
-        try {
-          await Promise.allSettled([
-            sendWhatsAppMessage({
-              id: booking.waterpark.toString(),
-              waterparkName: booking.waterparkName,
-              customBookingId: booking.customBookingId,
-              customerName: booking.name,
-              customerPhone: booking.phone,
-              date: booking.date,
-              adultquantity: booking.adults,
-              childquantity: booking.children,
-              totalAmount: booking.totalAmount,
-              left: booking.leftamount,
-            }),
-            selfWhatsAppMessage({
-              id: booking.waterpark.toString(),
-              waterparkName: booking.waterparkName,
-              customBookingId: booking.customBookingId,
-              customerName: booking.name,
-              customerPhone: booking.phone,
-              date: booking.date,
-              adultquantity: booking.adults,
-              childquantity: booking.children,
-              totalAmount: booking.totalAmount,
-              left: booking.leftamount,
-            }),
-            parkWhatsAppMessage({
-              id: booking.waterpark.toString(),
-              waterparkName: booking.waterparkName,
-              customBookingId: booking.customBookingId,
-              customerName: booking.name,
-              waternumber: booking.waternumber,
-              customerPhone: booking.phone,
-              date: booking.date,
-              adultquantity: booking.adults,
-              childquantity: booking.children,
-              totalAmount: booking.totalAmount,
-              left: booking.leftamount,
-            }),
-            sendEmail(
-              [booking.email, "am542062@gmail.com"],
-            
-                   `✅ Your Booking is Confirmed for ${booking.waterparkName}!`,
-          `
-          <!DOCTYPE html>
-          <html lang="en">
-          <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>Booking Confirmation</title>
-            <style>
-              body {
-                margin: 0;
-                padding: 0;
-                background-color: #f4f4f7;
-                font-family: Arial, sans-serif;
-              }
-              .container {
-                max-width: 600px;
-                margin: 20px auto;
-                background-color: #ffffff;
-                border-radius: 12px;
-                overflow: hidden;
-                border: 1px solid #dee2e6;
-              }
-              .header {
-                background-color: #007bff;
-                color: #ffffff;
-                padding: 30px 20px;
-                text-align: center;
-              }
-              .header h1 {
-                margin: 0;
-                font-size: 28px;
-                font-weight: bold;
-              }
-              .content {
-                padding: 30px;
-                color: #333333;
-                line-height: 1.6;
-              }
-              .content h2 {
-                color: #0056b3;
-                font-size: 22px;
-                margin-top: 0;
-              }
-              .details-table, .payment-table {
-                width: 100%;
-                border-collapse: collapse;
-                margin-top: 20px;
-              }
-              .details-table td, .payment-table td {
-                padding: 12px 0;
-                font-size: 16px;
-                border-bottom: 1px solid #eeeeee;
-              }
-              .details-table td:first-child {
-                color: #555555;
-              }
-              .details-table td:last-child, .payment-table td:last-child {
-                text-align: right;
-                font-weight: bold;
-              }
-              .payment-table .total-due td {
-                font-size: 20px;
-                font-weight: bold;
-                color: #d9534f;
-              }
-              .payment-table .paid td {
-                color: #5cb85c;
-              }
-              .cta-button {
-                display: block;
-                width: 200px;
-                margin: 30px auto;
-                padding: 15px 20px;
-                background-color: #007bff;
-                color: #ffffff;
-                text-align: center;
-                text-decoration: none;
-                border-radius: 8px;
-                font-size: 16px;
-                font-weight: bold;
-              }
-              .footer {
-                text-align: center;
-                padding: 20px;
-                font-size: 12px;
-                color: #888888;
-                background-color: #f8f9fa;
-              }
-            </style>
-          </head>
-          <body>
-            <div class="container">
-              <div class="header">
-                <h1>${booking.waterparkName}</h1>
-              </div>
-              <div class="content">
-                <h2>Your Booking is Confirmed!</h2>
-                <p>Hello ${booking.name}, thank you for your booking! We are excited to welcome you for a day of fun and splashes. Please find your booking details below.</p>
-
-                <table class="details-table">
-                  <tr>
-                    <td>Booking ID:</td>
-                    <td style="font-family: monospace;">${booking.customBookingId}</td>
-                  </tr>
-                  <tr>
-                    <td>Visit Date:</td>
-                    <td>${new Date(booking.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</td>
-                  </tr>
-                  <tr>
-                    <td>Guests:</td>
-                    <td>${booking.adults} Adult(s), ${booking.children} Child(ren)</td>
-                  </tr>
-                   <tr>
-                    <td>Phone:</td>
-                    <td>${booking.phone}</td>
-                  </tr>
-                </table>
-
-                <h2 style="margin-top: 30px;">Payment Summary</h2>
-                <table class="payment-table">
-                  <tr>
-                    <td>Total Amount:</td>
-                    <td>₹${booking.totalAmount.toFixed(2)}</td>
-                  </tr>
-                  <tr class="paid">
-                    <td>Advance Paid:</td>
-                    <td>₹${booking.advanceAmount.toFixed(2)}</td>
-                  </tr>
-                  <tr class="total-due">
-                    <td>Amount Due at Park:</td>
-                    <td>₹${booking.leftamount.toFixed(2)}</td>
-                  </tr>
-                </table>
-                
-                <a href="https://waterpark-frontend.vercel.app/booking/${booking.customBookingId}" class="cta-button" style="color: #ffffff;">View Your Ticket</a>
-                
-                <p style="text-align: center; color: #555;">Please show the ticket at the ticket counter upon your arrival.</p>
-              </div>
-              <div class="footer">
-                <p>This is an automated email. Please do not reply.</p>
-                <p>&copy; ${new Date().getFullYear()} ${booking.waterparkName}. All rights reserved.</p>
-              </div>
-            </div>
-          </body>
-          </html>
-
-        `
-          
-            ),
-          ]);
-          console.log("[razorpayWebhook] All notifications completed");
-        } catch (err) {
-          console.error("[razorpayWebhook] Notification error:", err);
-        }
-      })();
-
-      return; // stop here
-    } else {
-      // ✅ Handle unprocessed events
-      console.log("[razorpayWebhook] Unhandled event:", event);
-      return res.status(200).json({ success: true, message: "Event received but not processed" });
-    }
-  } catch (error) {
-    console.error("[razorpayWebhook] Error:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Webhook processing failed",
-      error: error.message,
+    const testOrder = await razorpay.orders.create({
+      amount: 100,
+      currency: "INR",
+      receipt: "test_receipt_" + Date.now(),
     });
+
+    console.log("[testRazorpayConfig] Test order created:", testOrder.id);
+    return res
+      .status(200)
+      .json({
+        success: true,
+        message: "Razorpay configured",
+        config,
+        test_order: testOrder.id,
+      });
+  } catch (error) {
+    console.error("[testRazorpayConfig] Error:", error);
+    return res
+      .status(500)
+      .json({
+        success: false,
+        message: "Razorpay test failed",
+        error: error.message,
+      });
   }
 };
 
