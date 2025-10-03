@@ -28,30 +28,59 @@ const app = express();
 
 
 
+// CORS configuration - Allow specific origins for production
 const allowedOrigins = [
   'http://localhost:5173',
+  
   'https://admin.waterparkchalo.com',
   'https://waterpark-frontend.vercel.app',
   'https://water-admin-lyart.vercel.app',
   'https://www.waterparkchalo.com',
   'https://waterparkchalo.com'
+ 
+
+ 
+  
 ];
 
+function isVercelPreview(origin) {
+  // If you want to allow all Vercel preview deploys for this project, keep this regex:
+  return /^https:\/\/pawn-shop-git-.*-aditya200410s-projects\.vercel\.app$/.test(origin);
+}
 
 app.use(cors({
-  origin: function(origin, callback){
-    if (!origin) return callback(null, true); // allow postman or curl
-    if (allowedOrigins.includes(origin)) {
+  origin: function (origin, callback) {
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin) || isVercelPreview(origin)) {
       callback(null, true);
     } else {
-      console.log('Blocked by CORS:', origin);
+      console.log('CORS blocked origin:', origin);
       callback(new Error('Not allowed by CORS'));
     }
   },
   credentials: true,
-  methods: ['GET','POST','PUT','DELETE','OPTIONS','PATCH'],
-  allowedHeaders: ['Content-Type','Authorization','X-Requested-With','Accept','Origin']
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin', 'Access-Control-Allow-Origin', 'Content-Length'],
+  exposedHeaders: ['Content-Length', 'X-Requested-With'],
+  preflightContinue: false,
+  optionsSuccessStatus: 204
 }));
+
+// Additional CORS headers for all routes
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (allowedOrigins.includes(origin) || isVercelPreview(origin)) {
+    res.header('Access-Control-Allow-Origin', origin);
+  }
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, Content-Length');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  if (req.method === 'OPTIONS') {
+    res.sendStatus(200);
+  } else {
+    next();
+  }
+});
 
 // IMPORTANT: Define webhook route with raw body parsing BEFORE JSON parsing
 // This ensures the webhook gets raw body for signature verification
