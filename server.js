@@ -88,6 +88,7 @@ app.post('/api/bookings/webhook/razorpay',
   express.raw({ type: 'application/json' }), 
   require('./controllers/bookingController').razorpayWebhook
 );
+// Razorpay webhook route (raw body needed for signature verification)
 
 // Use JSON parsing for all OTHER routes
 app.use(express.json());

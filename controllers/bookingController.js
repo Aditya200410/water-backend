@@ -920,102 +920,79 @@ exports.getBookingWithTicket = async (req, res) => {
 // ----------------------------
 // Razorpay Webhook Handler
 // ----------------------------
+
 exports.razorpayWebhook = async (req, res) => {
-  console.log("[razorpayWebhook] Webhook received - Body type:", typeof req.body);
-  console.log("[razorpayWebhook] Body length:", req.body?.length);
-  console.log("[razorpayWebhook] Headers:", req.headers);
-  console.log("[razorpayWebhook] Method:", req.method);
-  console.log("[razorpayWebhook] URL:", req.url);
-  console.log("[razorpayWebhook] Timestamp:", new Date().toISOString());
+  console.log("[razorpayWebhook] Webhook received:", new Date().toISOString());
 
   try {
-    // Handle raw body - should be Buffer or string
-    let rawBody;
-    if (Buffer.isBuffer(req.body)) {
-      rawBody = req.body.toString('utf8');
-    } else if (typeof req.body === 'string') {
-      rawBody = req.body;
-    } else {
-      console.error("[razorpayWebhook] Invalid body type:", typeof req.body);
-      return res.status(400).json({ success: false, message: "Invalid body format" });
-    }
-    
-    console.log("[razorpayWebhook] Raw body:", rawBody);
+    // ✅ Use raw buffer for signature verification
+    const rawBody = req.body.toString("utf8");
     const webhookData = JSON.parse(rawBody);
+
     const { event, payload } = webhookData;
-    
     console.log("[razorpayWebhook] Event:", event);
-    console.log("[razorpayWebhook] Payload:", payload);
 
-    // Verify webhook signature for security (only if secret is configured)
+    // ✅ Signature verification
     const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
-    console.log("[razorpayWebhook] Webhook secret configured:", !!webhookSecret);
-    console.log("[razorpayWebhook] Webhook secret value:", webhookSecret ? "SET" : "NOT SET");
-    
-    if (webhookSecret && webhookSecret.trim() !== '') {
-      console.log("[razorpayWebhook] Proceeding with signature verification");
-      const receivedSignature = req.headers['x-razorpay-signature'];
-      
-      if (!receivedSignature) {
-        console.warn("[razorpayWebhook] No signature provided");
-        return res.status(400).json({ success: false, message: "No signature provided" });
-      }
-      
-      const expectedSignature = crypto
-        .createHmac('sha256', webhookSecret)
-        .update(rawBody)
-        .digest('hex');
-
-      console.log("[razorpayWebhook] Signature verification:", {
-        received: receivedSignature,
-        expected: expectedSignature,
-        match: receivedSignature === expectedSignature
-      });
-
-      if (receivedSignature !== expectedSignature) {
-        console.warn("[razorpayWebhook] Invalid webhook signature");
-        return res.status(400).json({ success: false, message: "Invalid signature" });
-      }
-    } else {
-      console.log("[razorpayWebhook] No webhook secret configured, skipping signature verification");
-      // Don't require signature when no secret is configured
+    if (!webhookSecret) {
+      console.error("[razorpayWebhook] Webhook secret not configured!");
+      return res.status(500).json({ success: false, message: "Webhook secret missing" });
     }
 
-    // Handle payment captured event
-    if (event === 'payment.captured') {
+    const receivedSignature = req.headers["x-razorpay-signature"];
+    if (!receivedSignature) {
+      console.warn("[razorpayWebhook] No signature provided");
+      return res.status(400).json({ success: false, message: "No signature provided" });
+    }
+
+    const expectedSignature = crypto
+      .createHmac("sha256", webhookSecret)
+      .update(rawBody)
+      .digest("hex");
+
+    if (receivedSignature !== expectedSignature) {
+      console.warn("[razorpayWebhook] Invalid webhook signature");
+      return res.status(400).json({ success: false, message: "Invalid signature" });
+    }
+
+    // ✅ Handle events
+    if (event === "payment.captured") {
       console.log("[razorpayWebhook] Processing payment.captured event");
-      
-      // Check if payload structure is correct - Razorpay webhook structure
-      if (!payload || !payload.payment || !payload.payment.entity) {
+
+      // Safeguard payload
+      if (!payload?.payment?.entity) {
         console.error("[razorpayWebhook] Invalid payload structure:", payload);
         return res.status(400).json({ success: false, message: "Invalid payload structure" });
       }
-      
+
       const paymentEntity = payload.payment.entity;
-      const orderEntity = payload.order.entity;
-      
+      const orderEntity = payload.order?.entity;
+
+      if (!orderEntity) {
+        console.warn("[razorpayWebhook] Order entity missing in payload");
+        return res.status(400).json({ success: false, message: "Order entity missing" });
+      }
+
       console.log("[razorpayWebhook] Payment captured:", {
         paymentId: paymentEntity.id,
         orderId: orderEntity.id,
         amount: paymentEntity.amount,
-        status: paymentEntity.status
+        status: paymentEntity.status,
       });
 
-      // Find booking by order receipt (which contains booking._id)
+      // Lookup booking
       const booking = await Booking.findById(orderEntity.receipt);
-      
       if (!booking) {
         console.warn("[razorpayWebhook] Booking not found for order:", orderEntity.receipt);
         return res.status(404).json({ success: false, message: "Booking not found" });
       }
 
-      // Check if booking is already confirmed
       if (booking.paymentStatus === "Completed") {
         console.log("[razorpayWebhook] Booking already confirmed:", booking.customBookingId);
         return res.status(200).json({ success: true, message: "Booking already confirmed" });
       }
 
-      // Update booking status FIRST - this is critical for frontend polling
+      // ✅ Update booking
       booking.paymentStatus = "Completed";
       booking.paymentId = paymentEntity.id;
       booking.paymentType = "Razorpay";
@@ -1023,66 +1000,59 @@ exports.razorpayWebhook = async (req, res) => {
 
       console.log("[razorpayWebhook] Booking confirmed:", booking.customBookingId);
 
-      // Generate frontend URL
+      // Build frontend URL
       const frontendUrl = `https://www.waterparkchalo.com/ticket?bookingId=${booking.customBookingId}`;
 
-      // Respond immediately to webhook - don't wait for notifications
-      res.status(200).json({ 
-        success: true, 
+      // Respond immediately
+      res.status(200).json({
+        success: true,
         message: "Payment processed successfully",
         bookingId: booking.customBookingId,
-        frontendUrl
+        frontendUrl,
       });
 
-      // Send all notifications in parallel AFTER responding to webhook
-      console.log("[razorpayWebhook] Sending notifications in parallel (after response)...");
-      
-      const notificationPromises = [
-        // Customer WhatsApp
-        sendWhatsAppMessage({
-          id: booking.waterpark.toString(),
-          waterparkName: booking.waterparkName,
-          customBookingId: booking.customBookingId,
-          customerName: booking.name,
-          customerPhone: booking.phone,
-          date: booking.date,
-          adultquantity: booking.adults,
-          childquantity: booking.children,
-          totalAmount: booking.totalAmount,
-          left: booking.leftamount,
-        }).catch(err => console.error("[razorpayWebhook] Customer WhatsApp error:", err.message)),
-        
-        // Self WhatsApp
-        selfWhatsAppMessage({
-          id: booking.waterpark.toString(),
-          waterparkName: booking.waterparkName,
-          customBookingId: booking.customBookingId,
-          customerName: booking.name,
-          customerPhone: booking.phone,
-          date: booking.date,
-          adultquantity: booking.adults,
-          childquantity: booking.children,
-          totalAmount: booking.totalAmount,
-          left: booking.leftamount,
-        }).catch(err => console.error("[razorpayWebhook] Self WhatsApp error:", err.message)),
-
-        // Park WhatsApp
-        parkWhatsAppMessage({
-          id: booking.waterpark.toString(),
-          waterparkName: booking.waterparkName,
-          customBookingId: booking.customBookingId,
-          customerName: booking.name,
-          waternumber: booking.waternumber,
-          customerPhone: booking.phone,
-          date: booking.date,
-          adultquantity: booking.adults,
-          childquantity: booking.children,
-          totalAmount: booking.totalAmount,
-          left: booking.leftamount,
-        }).catch(err => console.error("[razorpayWebhook] Park WhatsApp error:", err.message)),
-
-        // Email confirmation
-        sendEmail(
+      // ✅ Run notifications in background
+      (async () => {
+        try {
+          await Promise.allSettled([
+            sendWhatsAppMessage({
+              id: booking.waterpark.toString(),
+              waterparkName: booking.waterparkName,
+              customBookingId: booking.customBookingId,
+              customerName: booking.name,
+              customerPhone: booking.phone,
+              date: booking.date,
+              adultquantity: booking.adults,
+              childquantity: booking.children,
+              totalAmount: booking.totalAmount,
+              left: booking.leftamount,
+            }),
+            selfWhatsAppMessage({
+              id: booking.waterpark.toString(),
+              waterparkName: booking.waterparkName,
+              customBookingId: booking.customBookingId,
+              customerName: booking.name,
+              customerPhone: booking.phone,
+              date: booking.date,
+              adultquantity: booking.adults,
+              childquantity: booking.children,
+              totalAmount: booking.totalAmount,
+              left: booking.leftamount,
+            }),
+            parkWhatsAppMessage({
+              id: booking.waterpark.toString(),
+              waterparkName: booking.waterparkName,
+              customBookingId: booking.customBookingId,
+              customerName: booking.name,
+              waternumber: booking.waternumber,
+              customerPhone: booking.phone,
+              date: booking.date,
+              adultquantity: booking.adults,
+              childquantity: booking.children,
+              totalAmount: booking.totalAmount,
+              left: booking.leftamount,
+            }),
+              sendEmail(
           [booking.email, "am542062@gmail.com"],
           `✅ Your Booking is Confirmed for ${booking.waterparkName}!`,
           `
@@ -1232,28 +1202,30 @@ exports.razorpayWebhook = async (req, res) => {
           </html>
           `
         ).catch(err => console.error("[razorpayWebhook] Email error:", err.message))
-      ];
+    
+          ]);
+          console.log("[razorpayWebhook] All notifications completed");
+        } catch (err) {
+          console.error("[razorpayWebhook] Notification error:", err);
+        }
+      })();
 
-      // Process notifications in background
-      Promise.allSettled(notificationPromises).then(results => {
-        console.log("[razorpayWebhook] All notifications completed:", results.map(r => r.status));
-      });
+      return; // stop here
+    } else {
+      // ✅ Handle unprocessed events
+      console.log("[razorpayWebhook] Unhandled event:", event);
+      return res.status(200).json({ success: true, message: "Event received but not processed" });
     }
-
-    // Handle other events if needed
-    console.log("[razorpayWebhook] Unhandled event:", event);
-    console.log("[razorpayWebhook] Full payload:", JSON.stringify(payload, null, 2));
-    return res.status(200).json({ success: true, message: "Event received but not processed" });
-
   } catch (error) {
     console.error("[razorpayWebhook] Error:", error);
-    return res.status(500).json({ 
-      success: false, 
+    return res.status(500).json({
+      success: false,
       message: "Webhook processing failed",
-      error: error.message 
+      error: error.message,
     });
   }
 };
+
 
 exports.testRazorpayConfig = async (req, res) => {
   console.log("[testRazorpayConfig] Testing Razorpay setup...");
