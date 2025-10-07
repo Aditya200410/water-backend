@@ -312,6 +312,11 @@ console.log("[createBooking] Generating custom booking ID for:", waterparkName);
     const order = await razorpay.orders.create(orderOptions);
     console.log("[createBooking] Razorpay order created:", order.id);
 
+    // ✅ Save the Razorpay order ID to the booking for webhook lookup
+    booking.razorpayOrderId = order.id;
+    await booking.save();
+    console.log("[createBooking] Saved Razorpay order ID to booking:", order.id);
+
     return res.status(200).json({
       success: true,
       message: "Razorpay order created",
@@ -1009,30 +1014,132 @@ exports.razorpayWebhook = async (req, res) => {
       console.log("  - Method:", paymentEntity.method);
       console.log("  - Receipt (Booking _id):", orderEntity.receipt);
 
-      // ✅ Step 5: Find and update booking atomically (prevents race conditions)
-      console.log("\n[razorpayWebhook] Step 5: Finding and updating booking atomically...");
-      console.log("[razorpayWebhook] Looking up booking with _id:", orderEntity.receipt);
+      // ✅ Step 5: Find booking using multiple strategies
+      console.log("\n[razorpayWebhook] Step 5: Finding booking...");
+      console.log("[razorpayWebhook] 🔍 DIAGNOSTIC - What Razorpay sent:");
+      console.log("  📝 Receipt:", orderEntity.receipt);
+      console.log("  📝 Receipt Type:", typeof orderEntity.receipt);
+      console.log("  📝 Receipt Length:", orderEntity.receipt?.length);
+      console.log("  📝 Is Valid ObjectId?:", /^[0-9a-fA-F]{24}$/.test(orderEntity.receipt));
+      console.log("  📝 Order ID:", orderEntity.id);
+      console.log("[razorpayWebhook] 🔍 DIAGNOSTIC - Payment Notes:");
+      console.log(JSON.stringify(paymentEntity.notes, null, 2));
       
-      // First, check if booking exists
-      const existingBooking = await Booking.findById(orderEntity.receipt);
+      let existingBooking = null;
+      let searchMethod = "";
+      
+      // Strategy 1: Try to find by receipt (_id)
+      if (orderEntity.receipt) {
+        console.log("[razorpayWebhook] Strategy 1: Trying to find by receipt (_id):", orderEntity.receipt);
+        try {
+          existingBooking = await Booking.findById(orderEntity.receipt);
+          if (existingBooking) {
+            searchMethod = "receipt (_id)";
+            console.log("[razorpayWebhook] ✅ Found booking by receipt!");
+          }
+        } catch (error) {
+          console.log("[razorpayWebhook] Receipt is not a valid ObjectId, trying other methods...");
+        }
+      }
+      
+      // Strategy 2: Try to find by customBookingId from notes
+      if (!existingBooking && paymentEntity.notes?.customBookingId) {
+        console.log("[razorpayWebhook] Strategy 2: Trying to find by customBookingId from notes:", paymentEntity.notes.customBookingId);
+        existingBooking = await Booking.findOne({ customBookingId: paymentEntity.notes.customBookingId });
+        if (existingBooking) {
+          searchMethod = "customBookingId from notes";
+          console.log("[razorpayWebhook] ✅ Found booking by customBookingId!");
+        }
+      }
+      
+      // Strategy 3: Try to find by bookingId from notes
+      if (!existingBooking && paymentEntity.notes?.bookingId) {
+        console.log("[razorpayWebhook] Strategy 3: Trying to find by bookingId from notes:", paymentEntity.notes.bookingId);
+        try {
+          existingBooking = await Booking.findById(paymentEntity.notes.bookingId);
+          if (existingBooking) {
+            searchMethod = "bookingId from notes";
+            console.log("[razorpayWebhook] ✅ Found booking by bookingId from notes!");
+          }
+        } catch (error) {
+          console.log("[razorpayWebhook] bookingId from notes is not a valid ObjectId");
+        }
+      }
+      
+      // Strategy 4: Try to find by order_id
+      if (!existingBooking) {
+        console.log("[razorpayWebhook] Strategy 4: Trying to find by Razorpay order_id:", orderEntity.id);
+        existingBooking = await Booking.findOne({ razorpayOrderId: orderEntity.id });
+        if (existingBooking) {
+          searchMethod = "razorpayOrderId";
+          console.log("[razorpayWebhook] ✅ Found booking by razorpayOrderId!");
+        }
+      }
       
       if (!existingBooking) {
-        console.error("[razorpayWebhook] ❌ BOOKING NOT FOUND!");
-        console.log("[razorpayWebhook] Searched for _id:", orderEntity.receipt);
-        console.log("[razorpayWebhook] This could mean:");
+        console.error("[razorpayWebhook] ❌ BOOKING NOT FOUND USING ANY METHOD!");
+        console.log("[razorpayWebhook] Attempted searches:");
+        console.log("  1. By receipt (_id):", orderEntity.receipt);
+        console.log("  2. By customBookingId:", paymentEntity.notes?.customBookingId || "N/A");
+        console.log("  3. By bookingId from notes:", paymentEntity.notes?.bookingId || "N/A");
+        console.log("  4. By razorpayOrderId:", orderEntity.id);
+        
+        // 🔍 DIAGNOSTIC: Check if ANY bookings exist
+        console.log("\n[razorpayWebhook] 🔍 DIAGNOSTIC - Checking database:");
+        try {
+          const totalBookings = await Booking.countDocuments();
+          console.log("  📊 Total bookings in database:", totalBookings);
+          
+          // Try to find recent bookings
+          const recentBookings = await Booking.find()
+            .sort({ bookingDate: -1 })
+            .limit(5)
+            .select('_id customBookingId razorpayOrderId paymentStatus');
+          
+          console.log("  📊 Recent bookings:");
+          recentBookings.forEach((b, i) => {
+            console.log(`    ${i + 1}. _id: ${b._id}, customId: ${b.customBookingId}, razorpayOrderId: ${b.razorpayOrderId || 'N/A'}, status: ${b.paymentStatus}`);
+          });
+          
+          // Try searching with the customBookingId if it exists in notes
+          if (paymentEntity.notes?.customBookingId) {
+            const bookingByCustomId = await Booking.findOne({ 
+              customBookingId: paymentEntity.notes.customBookingId 
+            }).select('_id customBookingId razorpayOrderId paymentStatus');
+            
+            if (bookingByCustomId) {
+              console.log("\n  ⚠️ IMPORTANT: Found booking by customBookingId but not by other methods!");
+              console.log("  📋 Booking details:");
+              console.log("    - _id:", bookingByCustomId._id.toString());
+              console.log("    - customBookingId:", bookingByCustomId.customBookingId);
+              console.log("    - razorpayOrderId:", bookingByCustomId.razorpayOrderId || 'N/A');
+              console.log("    - paymentStatus:", bookingByCustomId.paymentStatus);
+              console.log("  🔍 Comparing with what webhook received:");
+              console.log("    - Receipt from webhook:", orderEntity.receipt);
+              console.log("    - Match?", bookingByCustomId._id.toString() === orderEntity.receipt);
+            }
+          }
+        } catch (dbError) {
+          console.error("  ❌ Database diagnostic error:", dbError.message);
+        }
+        
+        console.log("\n[razorpayWebhook] This could mean:");
         console.log("  1. The booking was deleted");
         console.log("  2. The order receipt doesn't match any booking _id");
         console.log("  3. Database connection issue");
+        console.log("  4. Booking not yet saved when webhook arrived");
+        console.log("  5. Receipt format mismatch (check logs above)");
         return res.status(404).json({ success: false, message: "Booking not found" });
       }
 
-      console.log("[razorpayWebhook] ✅ Booking found!");
+      console.log("[razorpayWebhook] ✅ Booking found using:", searchMethod);
       console.log("  - Booking _id:", existingBooking._id);
       console.log("  - Custom Booking ID:", existingBooking.customBookingId);
       console.log("  - Current Payment Status:", existingBooking.paymentStatus);
       console.log("  - Customer Name:", existingBooking.name);
       console.log("  - Customer Email:", existingBooking.email);
       console.log("  - Customer Phone:", existingBooking.phone);
+      console.log("  - Razorpay Order ID:", existingBooking.razorpayOrderId || "N/A");
 
       // Check if already completed
       if (existingBooking.paymentStatus === "Completed") {
