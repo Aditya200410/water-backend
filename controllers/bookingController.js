@@ -688,20 +688,29 @@ exports.getSingleBooking = async (req, res) => {
 // Get Booking Status (Any status)
 // ----------------------------
 exports.getBookingStatus = async (req, res) => {
+  console.log("\n[getBookingStatus] 🔍 Status check requested");
   console.log("[getBookingStatus] Params:", req.params);
+  console.log("[getBookingStatus] Timestamp:", new Date().toISOString());
 
   try {
     const { customBookingId } = req.params;
+    console.log("[getBookingStatus] Looking up booking with customBookingId:", customBookingId);
+    
     const booking = await Booking.findOne({ customBookingId: customBookingId });
     
     if (!booking) {
-      console.warn("[getBookingStatus] Booking not found:", customBookingId);
+      console.warn("[getBookingStatus] ❌ Booking not found for customBookingId:", customBookingId);
       return res
         .status(404)
         .json({ success: false, message: "Booking not found." });
     }
     
-    console.log("[getBookingStatus] Booking found:", booking.customBookingId, "Status:", booking.paymentStatus);
+    console.log("[getBookingStatus] ✅ Booking found!");
+    console.log("  - Custom Booking ID:", booking.customBookingId);
+    console.log("  - Payment Status:", booking.paymentStatus);
+    console.log("  - Payment ID:", booking.paymentId || "N/A");
+    console.log("  - Booking Date:", booking.bookingDate);
+    console.log("  - Database _id:", booking._id);
     
     return res.status(200).json({ 
       success: true, 
@@ -713,7 +722,8 @@ exports.getBookingStatus = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error("[getBookingStatus] Error:", error);
+    console.error("[getBookingStatus] ❌ Error:", error.message);
+    console.error("[getBookingStatus] Stack:", error.stack);
     return res
       .status(500)
       .json({ success: false, message: "Error fetching booking status." });
@@ -922,26 +932,39 @@ exports.getBookingWithTicket = async (req, res) => {
 // ----------------------------
 
 exports.razorpayWebhook = async (req, res) => {
-  console.log("[razorpayWebhook] Webhook received:", new Date().toISOString());
+  const startTime = Date.now();
+  console.log("\n" + "=".repeat(80));
+  console.log("[razorpayWebhook] 🔔 WEBHOOK RECEIVED:", new Date().toISOString());
+  console.log("=".repeat(80));
 
   try {
-    // ✅ Use raw buffer for signature verification
+    // ✅ Step 1: Parse raw body
+    console.log("[razorpayWebhook] Step 1: Parsing raw body...");
     const rawBody = req.body.toString("utf8");
+    console.log("[razorpayWebhook] Raw body length:", rawBody.length, "bytes");
+    
     const webhookData = JSON.parse(rawBody);
-
     const { event, payload } = webhookData;
-    console.log("[razorpayWebhook] Event:", event);
+    
+    console.log("[razorpayWebhook] ✅ Parsed webhook data successfully");
+    console.log("[razorpayWebhook] Event type:", event);
+    console.log("[razorpayWebhook] Payload keys:", Object.keys(payload || {}));
 
-    // ✅ Signature verification
+    // ✅ Step 2: Verify webhook secret exists
+    console.log("\n[razorpayWebhook] Step 2: Verifying webhook secret...");
     const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
     if (!webhookSecret) {
-      console.error("[razorpayWebhook] Webhook secret not configured!");
+      console.error("[razorpayWebhook] ❌ CRITICAL: Webhook secret not configured in environment!");
       return res.status(500).json({ success: false, message: "Webhook secret missing" });
     }
+    console.log("[razorpayWebhook] ✅ Webhook secret is configured");
 
+    // ✅ Step 3: Verify signature
+    console.log("\n[razorpayWebhook] Step 3: Verifying signature...");
     const receivedSignature = req.headers["x-razorpay-signature"];
     if (!receivedSignature) {
-      console.warn("[razorpayWebhook] No signature provided");
+      console.error("[razorpayWebhook] ❌ No signature provided in headers");
+      console.log("[razorpayWebhook] Available headers:", Object.keys(req.headers));
       return res.status(400).json({ success: false, message: "No signature provided" });
     }
 
@@ -950,18 +973,23 @@ exports.razorpayWebhook = async (req, res) => {
       .update(rawBody)
       .digest("hex");
 
+    console.log("[razorpayWebhook] Received signature:", receivedSignature.substring(0, 20) + "...");
+    console.log("[razorpayWebhook] Expected signature:", expectedSignature.substring(0, 20) + "...");
+
     if (receivedSignature !== expectedSignature) {
-      console.warn("[razorpayWebhook] Invalid webhook signature");
+      console.error("[razorpayWebhook] ❌ SIGNATURE MISMATCH! Invalid webhook signature");
       return res.status(400).json({ success: false, message: "Invalid signature" });
     }
+    console.log("[razorpayWebhook] ✅ Signature verified successfully");
 
-    // ✅ Handle events
+    // ✅ Step 4: Handle payment.captured event
     if (event === "payment.captured") {
-      console.log("[razorpayWebhook] Processing payment.captured event");
+      console.log("\n[razorpayWebhook] Step 4: Processing payment.captured event");
 
-      // Safeguard payload
+      // Validate payload structure
       if (!payload?.payment?.entity) {
-        console.error("[razorpayWebhook] Invalid payload structure:", payload);
+        console.error("[razorpayWebhook] ❌ Invalid payload structure - missing payment.entity");
+        console.log("[razorpayWebhook] Payload structure:", JSON.stringify(payload, null, 2));
         return res.status(400).json({ success: false, message: "Invalid payload structure" });
       }
 
@@ -969,52 +997,115 @@ exports.razorpayWebhook = async (req, res) => {
       const orderEntity = payload.order?.entity;
 
       if (!orderEntity) {
-        console.warn("[razorpayWebhook] Order entity missing in payload");
+        console.error("[razorpayWebhook] ❌ Order entity missing in payload");
         return res.status(400).json({ success: false, message: "Order entity missing" });
       }
 
-      console.log("[razorpayWebhook] Payment captured:", {
-        paymentId: paymentEntity.id,
-        orderId: orderEntity.id,
-        amount: paymentEntity.amount,
-        status: paymentEntity.status,
-      });
+      console.log("[razorpayWebhook] 💰 Payment Details:");
+      console.log("  - Payment ID:", paymentEntity.id);
+      console.log("  - Order ID:", orderEntity.id);
+      console.log("  - Amount:", paymentEntity.amount / 100, "INR");
+      console.log("  - Status:", paymentEntity.status);
+      console.log("  - Method:", paymentEntity.method);
+      console.log("  - Receipt (Booking _id):", orderEntity.receipt);
 
-      // Lookup booking
-      const booking = await Booking.findById(orderEntity.receipt);
-      if (!booking) {
-        console.warn("[razorpayWebhook] Booking not found for order:", orderEntity.receipt);
+      // ✅ Step 5: Find and update booking atomically (prevents race conditions)
+      console.log("\n[razorpayWebhook] Step 5: Finding and updating booking atomically...");
+      console.log("[razorpayWebhook] Looking up booking with _id:", orderEntity.receipt);
+      
+      // First, check if booking exists
+      const existingBooking = await Booking.findById(orderEntity.receipt);
+      
+      if (!existingBooking) {
+        console.error("[razorpayWebhook] ❌ BOOKING NOT FOUND!");
+        console.log("[razorpayWebhook] Searched for _id:", orderEntity.receipt);
+        console.log("[razorpayWebhook] This could mean:");
+        console.log("  1. The booking was deleted");
+        console.log("  2. The order receipt doesn't match any booking _id");
+        console.log("  3. Database connection issue");
         return res.status(404).json({ success: false, message: "Booking not found" });
       }
 
-      if (booking.paymentStatus === "Completed") {
-        console.log("[razorpayWebhook] Booking already confirmed:", booking.customBookingId);
-        return res.status(200).json({ success: true, message: "Booking already confirmed" });
+      console.log("[razorpayWebhook] ✅ Booking found!");
+      console.log("  - Booking _id:", existingBooking._id);
+      console.log("  - Custom Booking ID:", existingBooking.customBookingId);
+      console.log("  - Current Payment Status:", existingBooking.paymentStatus);
+      console.log("  - Customer Name:", existingBooking.name);
+      console.log("  - Customer Email:", existingBooking.email);
+      console.log("  - Customer Phone:", existingBooking.phone);
+
+      // Check if already completed
+      if (existingBooking.paymentStatus === "Completed") {
+        console.log("[razorpayWebhook] ℹ️ Booking already confirmed, skipping update");
+        return res.status(200).json({ 
+          success: true, 
+          message: "Booking already confirmed",
+          bookingId: existingBooking.customBookingId 
+        });
       }
 
-      // ✅ Update booking
-      booking.paymentStatus = "Completed";
-      booking.paymentId = paymentEntity.id;
-      booking.paymentType = "Razorpay";
-      await booking.save();
-
-      console.log("[razorpayWebhook] Booking confirmed:", booking.customBookingId);
+      // ✅ Step 6: Update booking atomically (prevents duplicate updates)
+      console.log("\n[razorpayWebhook] Step 6: Updating booking status to 'Completed' atomically...");
+      const oldStatus = existingBooking.paymentStatus;
+      
+      // Use findOneAndUpdate with conditions to prevent race conditions
+      const booking = await Booking.findOneAndUpdate(
+        { 
+          _id: orderEntity.receipt,
+          paymentStatus: { $ne: "Completed" } // Only update if NOT already Completed
+        },
+        {
+          $set: {
+            paymentStatus: "Completed",
+            paymentId: paymentEntity.id,
+            paymentType: "Razorpay"
+          }
+        },
+        { 
+          new: true, // Return updated document
+          runValidators: true // Run model validators
+        }
+      );
+      
+      if (!booking) {
+        console.log("[razorpayWebhook] ℹ️ Booking was already updated (race condition avoided)");
+        return res.status(200).json({ 
+          success: true, 
+          message: "Booking already confirmed",
+          bookingId: existingBooking.customBookingId 
+        });
+      }
+      
+      console.log("[razorpayWebhook] ✅ BOOKING UPDATED SUCCESSFULLY!");
+      console.log("  - Status changed from:", oldStatus, "→", booking.paymentStatus);
+      console.log("  - Payment ID:", booking.paymentId);
+      console.log("  - Custom Booking ID:", booking.customBookingId);
 
       // Build frontend URL
       const frontendUrl = `https://www.waterparkchalo.com/ticket?bookingId=${booking.customBookingId}`;
 
-      // Respond immediately
+      // ✅ Step 7: Respond to Razorpay immediately
+      console.log("\n[razorpayWebhook] Step 7: Sending success response to Razorpay");
+      const processingTime = Date.now() - startTime;
+      console.log("[razorpayWebhook] Total processing time:", processingTime, "ms");
+      
       res.status(200).json({
         success: true,
         message: "Payment processed successfully",
         bookingId: booking.customBookingId,
         frontendUrl,
+        processingTime: processingTime + "ms"
       });
 
-      // ✅ Run notifications in background
+      // ✅ Step 8: Send notifications in background (non-blocking)
+      console.log("\n[razorpayWebhook] Step 8: Sending notifications in background...");
+      console.log("=".repeat(80) + "\n");
+      
       (async () => {
         try {
-          await Promise.allSettled([
+          console.log("[razorpayWebhook] Starting background notifications for:", booking.customBookingId);
+          
+          const notificationResults = await Promise.allSettled([
             sendWhatsAppMessage({
               id: booking.waterpark.toString(),
               waterparkName: booking.waterparkName,
@@ -1026,6 +1117,9 @@ exports.razorpayWebhook = async (req, res) => {
               childquantity: booking.children,
               totalAmount: booking.totalAmount,
               left: booking.leftamount,
+            }).catch(err => {
+              console.error("[razorpayWebhook] Customer WhatsApp error:", err.message);
+              return { status: 'failed', error: err.message };
             }),
             selfWhatsAppMessage({
               id: booking.waterpark.toString(),
@@ -1038,6 +1132,9 @@ exports.razorpayWebhook = async (req, res) => {
               childquantity: booking.children,
               totalAmount: booking.totalAmount,
               left: booking.leftamount,
+            }).catch(err => {
+              console.error("[razorpayWebhook] Self WhatsApp error:", err.message);
+              return { status: 'failed', error: err.message };
             }),
             parkWhatsAppMessage({
               id: booking.waterpark.toString(),
@@ -1051,8 +1148,11 @@ exports.razorpayWebhook = async (req, res) => {
               childquantity: booking.children,
               totalAmount: booking.totalAmount,
               left: booking.leftamount,
+            }).catch(err => {
+              console.error("[razorpayWebhook] Park WhatsApp error:", err.message);
+              return { status: 'failed', error: err.message };
             }),
-              sendEmail(
+            sendEmail(
           [booking.email, "am542062@gmail.com"],
           `✅ Your Booking is Confirmed for ${booking.waterparkName}!`,
           `
@@ -1201,23 +1301,44 @@ exports.razorpayWebhook = async (req, res) => {
           </body>
           </html>
           `
-        ).catch(err => console.error("[razorpayWebhook] Email error:", err.message))
-    
+        ).catch(err => {
+              console.error("[razorpayWebhook] Email error:", err.message);
+              return { status: 'failed', error: err.message };
+            })
           ]);
-          console.log("[razorpayWebhook] All notifications completed");
+          
+          // Log notification results
+          console.log("[razorpayWebhook] ✅ All notifications completed");
+          console.log("[razorpayWebhook] Notification results:");
+          notificationResults.forEach((result, index) => {
+            const names = ['Customer WhatsApp', 'Self WhatsApp', 'Park WhatsApp', 'Email'];
+            console.log(`  - ${names[index]}: ${result.status}`);
+            if (result.status === 'rejected' && result.reason) {
+              console.log(`    Error: ${result.reason.message || result.reason}`);
+            }
+          });
         } catch (err) {
-          console.error("[razorpayWebhook] Notification error:", err);
+          console.error("[razorpayWebhook] Notification batch error:", err);
         }
       })();
 
-      return; // stop here
+      return; // stop here - response already sent
     } else {
-      // ✅ Handle unprocessed events
-      console.log("[razorpayWebhook] Unhandled event:", event);
+      // ✅ Handle other events (not payment.captured)
+      console.log("\n[razorpayWebhook] ℹ️ Unhandled event type:", event);
+      console.log("[razorpayWebhook] This event will be acknowledged but not processed");
+      console.log("=".repeat(80) + "\n");
       return res.status(200).json({ success: true, message: "Event received but not processed" });
     }
   } catch (error) {
-    console.error("[razorpayWebhook] Error:", error);
+    console.error("\n" + "=".repeat(80));
+    console.error("[razorpayWebhook] ❌ CRITICAL ERROR!");
+    console.error("=".repeat(80));
+    console.error("[razorpayWebhook] Error type:", error.name);
+    console.error("[razorpayWebhook] Error message:", error.message);
+    console.error("[razorpayWebhook] Error stack:", error.stack);
+    console.error("=".repeat(80) + "\n");
+    
     return res.status(500).json({
       success: false,
       message: "Webhook processing failed",
@@ -1276,24 +1397,50 @@ exports.testRazorpayConfig = async (req, res) => {
 // Test Webhook Endpoint
 // ----------------------------
 exports.testWebhook = async (req, res) => {
-  console.log("[testWebhook] Webhook test endpoint called");
-  console.log("[testWebhook] Request body:", req.body);
-  console.log("[testWebhook] Headers:", req.headers);
+  console.log("\n" + "=".repeat(80));
+  console.log("[testWebhook] 🧪 WEBHOOK TEST ENDPOINT CALLED");
+  console.log("=".repeat(80));
+  console.log("[testWebhook] Timestamp:", new Date().toISOString());
+  console.log("[testWebhook] Request body:", JSON.stringify(req.body, null, 2));
+  console.log("[testWebhook] Headers:", JSON.stringify(req.headers, null, 2));
+  console.log("=".repeat(80) + "\n");
   
   try {
-    return res.status(200).json({
+    const diagnostics = {
       success: true,
-      message: "Webhook test endpoint is working",
+      message: "Webhook test endpoint is working perfectly!",
       timestamp: new Date().toISOString(),
-      body: req.body,
-      headers: req.headers
-    });
+      environment: {
+        razorpay_key_id: process.env.RAZORPAY_KEY_ID ? "✅ Configured" : "❌ Missing",
+        razorpay_key_secret: process.env.RAZORPAY_KEY_SECRET ? "✅ Configured" : "❌ Missing",
+        razorpay_webhook_secret: process.env.RAZORPAY_WEBHOOK_SECRET ? "✅ Configured" : "❌ Missing",
+        database_connected: mongoose.connection.readyState === 1 ? "✅ Connected" : "❌ Disconnected"
+      },
+      request: {
+        body: req.body,
+        headers: req.headers,
+        method: req.method,
+        path: req.path,
+        query: req.query
+      },
+      endpoints: {
+        webhook_url: "/api/bookings/webhook/razorpay",
+        status_check_url: "/api/bookings/status/:customBookingId",
+        test_config_url: "/api/bookings/test/razorpay/config",
+        test_webhook_url: "/api/bookings/test/webhook"
+      }
+    };
+
+    console.log("[testWebhook] Diagnostics:", JSON.stringify(diagnostics, null, 2));
+    
+    return res.status(200).json(diagnostics);
   } catch (error) {
-    console.error("[testWebhook] Error:", error);
+    console.error("[testWebhook] ❌ Error:", error);
     return res.status(500).json({
       success: false,
       message: "Webhook test failed",
-      error: error.message
+      error: error.message,
+      stack: error.stack
     });
   }
 };

@@ -31,6 +31,7 @@ const app = express();
 // CORS configuration - Allow specific origins for production
 const allowedOrigins = [
   'http://localhost:5173',
+  'http://localhost:5174',
   
   'https://admin.waterparkchalo.com',
   'https://waterpark-frontend.vercel.app',
