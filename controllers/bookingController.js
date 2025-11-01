@@ -264,7 +264,7 @@ console.log("[createBooking] Generating custom booking ID for:", waterparkName);
       advanceAmount: Number(advanceAmount),
       totalAmount,
       leftamount: calculatedLeftAmount,
-      paymentStatus: paymentMethod === "cash" ? "Pending" : "Initiated",
+      paymentStatus: "Pending", // All bookings start as "Pending" until payment completes
       paymentType, // This is the product's payment type (advance/full)
       paymentMethod, // This is the payment method (phonepe/cash)
       bookingDate: new Date(),
@@ -284,7 +284,7 @@ console.log("[createBooking] Generating custom booking ID for:", waterparkName);
     await booking.save();
     console.log("[createBooking] Booking saved with custom ID:", booking.customBookingId);
 
-    if (paymentType === "cash") {
+    if (paymentMethod === "cash") {
         console.log(
             "[createBooking] Cash payment flow, sending notifications in parallel."
         );
@@ -364,7 +364,8 @@ console.log("[createBooking] Generating custom booking ID for:", waterparkName);
           type: 'PG_CHECKOUT',
           message: `Booking payment for ${waterparkName}`,
           merchantUrls: {
-            redirectUrl: `${backendUrl.replace(/\/+$/, '')}/api/bookings/phonepe/redirect?bookingId=${booking.customBookingId}&merchantOrderId=${merchantOrderId}`
+            redirectUrl: `${backendUrl.replace(/\/+$/, '')}/api/bookings/phonepe/redirect?bookingId=${booking.customBookingId}&merchantOrderId=${merchantOrderId}`,
+            callbackUrl: `${backendUrl.replace(/\/+$/, '')}/api/bookings/phonepe/callback`
           }
         }
       };
@@ -1399,60 +1400,6 @@ exports.phonePeRedirect = async (req, res) => {
         }
       } catch (finalError) {
         console.error('[phonePeRedirect] Final check failed, proceeding anyway:', finalError.message);
-      }
-    }
-
-    // LAST FALLBACK: Check DB with customBookingId - if booking exists, set status to Completed
-    if (booking && booking.customBookingId && booking.paymentStatus !== "Completed") {
-      console.log('[phonePeRedirect] 🔄 LAST FALLBACK: Checking DB with customBookingId:', booking.customBookingId);
-      
-      try {
-        // Find booking in DB using customBookingId
-        const dbBooking = await Booking.findOne({ customBookingId: booking.customBookingId });
-        
-        if (dbBooking) {
-          console.log('[phonePeRedirect] ✅ Booking found in DB with customBookingId:', dbBooking.customBookingId);
-          console.log('[phonePeRedirect] Current status in DB:', dbBooking.paymentStatus);
-          console.log('[phonePeRedirect] PhonePe order ID in DB:', dbBooking.phonepeOrderId);
-          
-          // If booking exists and has phonepeOrderId, set status to Completed (last fallback)
-          if (dbBooking.phonepeOrderId && dbBooking.paymentStatus !== "Completed") {
-            console.log('[phonePeRedirect] ⚠️ LAST FALLBACK: Setting paymentStatus to "Completed" because booking exists with payment ID');
-            
-            const fallbackUpdate = await Booking.findOneAndUpdate(
-              { customBookingId: booking.customBookingId },
-              {
-                $set: {
-                  paymentStatus: "Completed",
-                  paymentType: "PhonePe",
-                  paymentId: dbBooking.phonepeOrderId
-                }
-              },
-              { new: true }
-            );
-            
-            if (fallbackUpdate) {
-              booking = fallbackUpdate;
-              console.log('[phonePeRedirect] ✅ LAST FALLBACK: Status updated to "Completed"');
-              console.log('[phonePeRedirect] Final status after fallback:', booking.paymentStatus);
-            } else {
-              // Final fallback: direct save
-              dbBooking.paymentStatus = "Completed";
-              dbBooking.paymentType = "PhonePe";
-              dbBooking.paymentId = dbBooking.phonepeOrderId;
-              await dbBooking.save();
-              booking = await Booking.findOne({ customBookingId: booking.customBookingId });
-              console.log('[phonePeRedirect] ✅ LAST FALLBACK: Status updated via direct save');
-            }
-          } else if (dbBooking.phonepeOrderId && dbBooking.paymentStatus === "Completed") {
-            console.log('[phonePeRedirect] ✅ Booking already has "Completed" status in DB');
-            booking = dbBooking; // Use the DB booking
-          }
-        } else {
-          console.warn('[phonePeRedirect] ⚠️ LAST FALLBACK: Booking not found in DB with customBookingId:', booking.customBookingId);
-        }
-      } catch (fallbackError) {
-        console.error('[phonePeRedirect] LAST FALLBACK check failed:', fallbackError.message);
       }
     }
 
