@@ -377,13 +377,25 @@ exports.phonePeCallback = async (req, res) => {
 exports.getPhonePeStatus = async (req, res) => {
   try {
     // Accept both merchantOrderId and orderId, but use orderId for status check
-    const { orderId } = req.params;
+    let { orderId } = req.params;
     if (!orderId) {
       return res.status(400).json({
         success: false,
         message: 'PhonePe orderId (transaction ID) is required'
       });
     }
+    
+    // Sanitize orderId - remove any invalid characters like colons, semicolons, etc.
+    // PhonePe orderIds should not contain these characters (e.g., "OMO2511012306208273028508W:1" -> "OMO2511012306208273028508W")
+    orderId = String(orderId).split(':')[0].split(';')[0].trim();
+    
+    if (!orderId || orderId.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid PhonePe orderId format'
+      });
+    }
+    
     const env = process.env.PHONEPE_ENV || 'sandbox';
     const accessToken = await getPhonePeToken();
     const baseUrl = env === 'production' 
