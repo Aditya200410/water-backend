@@ -317,64 +317,18 @@ exports.phonePeCallback = async (req, res) => {
       );
       console.log('PhonePe verification response:', response.data);
       
-      // Find booking by merchantOrderId or orderId
-      let booking = await Booking.findOne({ phonepeMerchantOrderId: merchantOrderId });
-      if (!booking) {
-        booking = await Booking.findOne({ phonepeOrderId: orderId });
-      }
-      
       if (response.data && response.data.state === 'COMPLETED') {
         console.log(`Payment completed for transaction: ${merchantOrderId}`);
         
-        // Update booking in DB if found
+        // Update booking in DB and send confirmation
+        const booking = await Booking.findOneAndUpdate(
+          { phonepeOrderId: orderId },
+          { paymentStatus: 'Completed' },
+          { new: true }
+        );
+        
         if (booking) {
-          // Check if already completed to avoid duplicate updates
-          if (booking.paymentStatus === "Completed") {
-            console.log('Booking already confirmed, skipping update');
-            return res.json({
-              success: true,
-              message: 'Booking already confirmed',
-              orderId: orderId,
-              merchantOrderId: merchantOrderId,
-              bookingId: booking.customBookingId,
-              status: 'COMPLETED'
-            });
-          }
-
-          // Update booking status atomically
-          const updatedBooking = await Booking.findOneAndUpdate(
-            { 
-              _id: booking._id,
-              paymentStatus: { $ne: "Completed" } // Only update if NOT already Completed
-            },
-            {
-              $set: {
-                paymentStatus: "Completed",
-                paymentId: orderId
-              }
-            },
-            { 
-              new: true, // Return updated document
-              runValidators: true // Run model validators
-            }
-          );
-
-          if (!updatedBooking) {
-            console.log('Booking was already updated (race condition avoided)');
-            return res.json({
-              success: true,
-              message: 'Booking already confirmed',
-              orderId: orderId,
-              merchantOrderId: merchantOrderId,
-              bookingId: booking.customBookingId,
-              status: 'COMPLETED'
-            });
-          }
-
-          console.log('✅ BOOKING UPDATED SUCCESSFULLY!');
-          console.log('  - Custom Booking ID:', updatedBooking.customBookingId);
-          console.log('  - Payment Status:', updatedBooking.paymentStatus);
-          console.log('  - Payment ID:', updatedBooking.paymentId);
+          console.log(`Booking ${booking.customBookingId} updated to Completed`);
         } else {
           console.warn('Booking not found for transactionId:', orderId);
         }
@@ -384,27 +338,23 @@ exports.phonePeCallback = async (req, res) => {
           message: 'Payment completed successfully',
           orderId: orderId,
           merchantOrderId: merchantOrderId,
-          bookingId: booking?.customBookingId,
           status: 'COMPLETED'
         });
       } else if (response.data && response.data.state === 'FAILED') {
         console.log(`Payment failed for transaction: ${merchantOrderId}`);
         
-        // Update booking status to Failed if found
-        if (booking) {
-          await Booking.findOneAndUpdate(
-            { _id: booking._id },
-            { $set: { paymentStatus: "Failed" } },
-            { new: true }
-          );
-        }
+        // Update booking status to Failed
+        const booking = await Booking.findOneAndUpdate(
+          { phonepeOrderId: orderId },
+          { paymentStatus: 'Failed' },
+          { new: true }
+        );
         
         return res.json({
           success: false,
           message: 'Payment failed',
           orderId: orderId,
           merchantOrderId: merchantOrderId,
-          bookingId: booking?.customBookingId,
           status: 'FAILED',
           errorCode: response.data.errorCode,
           detailedErrorCode: response.data.detailedErrorCode
@@ -416,7 +366,6 @@ exports.phonePeCallback = async (req, res) => {
           message: 'Payment is pending',
           orderId: orderId,
           merchantOrderId: merchantOrderId,
-          bookingId: booking?.customBookingId,
           status: 'PENDING'
         });
       }
@@ -439,7 +388,7 @@ exports.phonePeCallback = async (req, res) => {
 exports.getPhonePeStatus = async (req, res) => {
   try {
     // Accept both merchantOrderId and orderId, but use orderId for status check
-    let { orderId } = req.params;
+    const { orderId } = req.params;
     if (!orderId) {
       return res.status(400).json({
         success: false,
@@ -447,165 +396,37 @@ exports.getPhonePeStatus = async (req, res) => {
       });
     }
     
-    // Store original orderId for logging and potential fallback
-    const originalOrderId = String(orderId).trim();
-    
-    // PhonePe orderIds can contain colons (e.g., "OMO2511012306208273028508W:1")
-    // Try with the original orderId first, then sanitize if needed
-    let sanitizedOrderId = String(orderId).split(':')[0].split(';')[0].trim();
-    
-    console.log(`[getPhonePeStatus] Original orderId: ${originalOrderId}`);
-    console.log(`[getPhonePeStatus] Sanitized orderId: ${sanitizedOrderId}`);
-    
-    if (!originalOrderId || originalOrderId.length === 0) {
-      console.error('[getPhonePeStatus] Invalid orderId:', originalOrderId);
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid PhonePe orderId format',
-        originalOrderId: originalOrderId
-      });
-    }
-    
     const env = process.env.PHONEPE_ENV || 'sandbox';
-    let accessToken;
-    try {
-      accessToken = await getPhonePeToken();
-    } catch (tokenError) {
-      console.error('[getPhonePeStatus] Failed to get PhonePe token:', tokenError);
-      return res.status(500).json({
-        success: false,
-        message: 'Failed to authenticate with PhonePe',
-        error: tokenError.message
-      });
-    }
-    
+    const accessToken = await getPhonePeToken();
     const baseUrl = env === 'production' 
       ? 'https://api.phonepe.com/apis/pg'
       : 'https://api-preprod.phonepe.com/apis/pg-sandbox';
+    const apiEndpoint = `/checkout/v2/order/${orderId}/status`;
     
-    // Try with original orderId first (PhonePe may expect the full orderId with colon)
-    // URL encode the orderId to handle special characters safely in URL path
-    let orderIdToUse = originalOrderId;
-    let encodedOrderId = encodeURIComponent(originalOrderId);
-    let apiEndpoint = `/checkout/v2/order/${encodedOrderId}/status`;
-    let fullUrl = `${baseUrl}${apiEndpoint}`;
+    console.log(`Checking PhonePe status for orderId: ${orderId}`);
+    console.log(`API URL: ${baseUrl}${apiEndpoint}`);
     
-    console.log(`[getPhonePeStatus] Attempting PhonePe API call with original orderId: ${originalOrderId}`);
-    console.log(`[getPhonePeStatus] Encoded orderId: ${encodedOrderId}`);
-    console.log(`[getPhonePeStatus] API URL: ${fullUrl}`);
-    
-    let response;
-    try {
-      response = await axios.get(
-        fullUrl,
-        {
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `O-Bearer ${accessToken}`
-          },
-          timeout: 30000
-        }
-      );
-      console.log(`[getPhonePeStatus] ✅ API call succeeded with original orderId`);
-    } catch (apiError) {
-      // If API call fails with original orderId, try with sanitized orderId
-      if (sanitizedOrderId !== originalOrderId && apiError.response?.status === 400) {
-        console.log(`[getPhonePeStatus] API call failed with original orderId (status: ${apiError.response?.status}), trying with sanitized: ${sanitizedOrderId}`);
-        
-        const encodedSanitizedOrderId = encodeURIComponent(sanitizedOrderId);
-        const sanitizedApiEndpoint = `/checkout/v2/order/${encodedSanitizedOrderId}/status`;
-        const sanitizedFullUrl = `${baseUrl}${sanitizedApiEndpoint}`;
-        
-        try {
-          response = await axios.get(
-            sanitizedFullUrl,
-            {
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `O-Bearer ${accessToken}`
-              },
-              timeout: 30000
-            }
-          );
-          // If sanitized works, use it
-          orderIdToUse = sanitizedOrderId;
-          console.log(`[getPhonePeStatus] ✅ Successfully used sanitized orderId: ${sanitizedOrderId}`);
-        } catch (sanitizedError) {
-          // If both fail, log and throw the original error with better message
-          console.error(`[getPhonePeStatus] Both original and sanitized orderIds failed`);
-          console.error(`[getPhonePeStatus] Original error:`, apiError.response?.data || apiError.message);
-          console.error(`[getPhonePeStatus] Sanitized error:`, sanitizedError.response?.data || sanitizedError.message);
-          throw apiError;
-        }
-      } else {
-        throw apiError;
+    const response = await axios.get(
+      baseUrl + apiEndpoint,
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `O-Bearer ${accessToken}`
+        },
+        timeout: 30000
       }
-    }
+    );
+    
     console.log('PhonePe status response:', response.data);
     
+    // Only COMPLETED is considered success; all others are not
     // Try to extract merchantOrderId from metaInfo if available
     let merchantOrderId = null;
     if (response.data && response.data.metaInfo && response.data.metaInfo.merchantOrderId) {
       merchantOrderId = response.data.metaInfo.merchantOrderId;
     }
     
-    // Find booking by orderId or merchantOrderId
-    // Try to find booking with both the orderId that worked and the original/sanitized versions
-    let booking = null;
-    if (orderIdToUse) {
-      // Try with the orderId that worked for API call
-      booking = await Booking.findOne({ phonepeOrderId: orderIdToUse });
-      
-      // If not found and we used sanitized, try with original
-      if (!booking && orderIdToUse === sanitizedOrderId && originalOrderId !== sanitizedOrderId) {
-        booking = await Booking.findOne({ phonepeOrderId: originalOrderId });
-        console.log(`[getPhonePeStatus] Tried original orderId for booking lookup: ${originalOrderId}`);
-      }
-      
-      // If not found and we used original, try with sanitized
-      if (!booking && orderIdToUse === originalOrderId && sanitizedOrderId !== originalOrderId) {
-        booking = await Booking.findOne({ phonepeOrderId: sanitizedOrderId });
-        console.log(`[getPhonePeStatus] Tried sanitized orderId for booking lookup: ${sanitizedOrderId}`);
-      }
-    }
-    if (!booking && merchantOrderId) {
-      booking = await Booking.findOne({ phonepeMerchantOrderId: merchantOrderId });
-    }
-    
-    // Update booking status based on PhonePe response
     if (response.data && response.data.state) {
-      if (booking) {
-        if (response.data.state === 'COMPLETED') {
-          // Only update if not already Completed
-          if (booking.paymentStatus !== "Completed") {
-            await Booking.findOneAndUpdate(
-              { 
-                _id: booking._id,
-                paymentStatus: { $ne: "Completed" }
-              },
-              {
-                $set: {
-                  paymentStatus: "Completed",
-                  paymentId: orderIdToUse
-                }
-              },
-              { new: true }
-            );
-            console.log(`Updated booking ${booking.customBookingId} to Completed`);
-          }
-        } else if (response.data.state === 'FAILED') {
-          // Update to Failed if not already Completed
-          if (booking.paymentStatus !== "Completed") {
-            await Booking.findOneAndUpdate(
-              { _id: booking._id },
-              { $set: { paymentStatus: "Failed" } },
-              { new: true }
-            );
-            console.log(`Updated booking ${booking.customBookingId} to Failed`);
-          }
-        }
-      }
-      
       return res.json({
         success: response.data.state === 'COMPLETED',
         data: {
@@ -617,8 +438,7 @@ exports.getPhonePeStatus = async (req, res) => {
           paymentDetails: response.data.paymentDetails || [],
           errorCode: response.data.errorCode,
           detailedErrorCode: response.data.detailedErrorCode,
-          errorContext: response.data.errorContext,
-          bookingId: booking?.customBookingId
+          errorContext: response.data.errorContext
         },
         message: response.data.state === 'COMPLETED' ? 'Payment completed' : (response.data.state === 'FAILED' ? 'Payment failed' : 'Payment pending')
       });
@@ -636,63 +456,37 @@ exports.getPhonePeStatus = async (req, res) => {
     }
   } catch (error) {
     const phonePeError = error.response?.data;
-    const statusCode = error.response?.status;
-    console.error('[getPhonePeStatus] PhonePe API error:', {
-      status: statusCode,
-      data: phonePeError,
-      message: error.message,
-      orderId: orderId,
-      url: error.config?.url
-    });
-    
-    // Handle specific error responses from PhonePe
-    if (statusCode === 400) {
-      return res.status(400).json({
-        success: false,
-        message: phonePeError?.message || 'Invalid request to PhonePe API',
-        code: phonePeError?.code,
-        phonePeMessage: phonePeError?.message,
-        orderId: orderId
-      });
-    }
+    console.error('PhonePe status check error:', phonePeError || error.message);
     
     if (phonePeError && typeof phonePeError === 'object') {
-      return res.status(statusCode || 500).json({
+      return res.status(error.response.status || 500).json({
         success: false,
-        message: phonePeError.message || 'PhonePe API error',
+        message: phonePeError.message || 'PhonePe error',
         code: phonePeError.code,
-        data: phonePeError.data || null,
-        orderId: orderId
+        data: phonePeError.data || null
       });
     }
     
-    if (statusCode === 404) {
+    if (error.response?.status === 404) {
       return res.status(404).json({
         success: false,
-        message: 'Order not found in PhonePe system',
-        orderId: orderId
+        message: 'Order not found'
       });
-    } else if (statusCode === 401) {
+    } else if (error.response?.status === 401) {
       return res.status(401).json({
         success: false,
-        message: 'Authentication failed with PhonePe'
+        message: 'Authentication failed'
       });
     } else if (error.code === 'ECONNABORTED') {
       return res.status(408).json({
         success: false,
-        message: 'Request timeout - PhonePe API did not respond in time'
-      });
-    } else if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
-      return res.status(503).json({
-        success: false,
-        message: 'PhonePe API is not reachable'
+        message: 'Request timeout'
       });
     }
     
-    return res.status(statusCode || 500).json({
+    return res.status(500).json({
       success: false,
-      message: error.message || 'Failed to check transaction status',
-      orderId: orderId
+      message: error.message || 'Failed to check transaction status'
     });
   }
 };

@@ -264,7 +264,7 @@ console.log("[createBooking] Generating custom booking ID for:", waterparkName);
       advanceAmount: Number(advanceAmount),
       totalAmount,
       leftamount: calculatedLeftAmount,
-      paymentStatus: "Pending", // All bookings start as "Pending" until payment completes
+      paymentStatus: "pending", // All bookings start as "pending" until payment completes
       paymentType, // This is the product's payment type (advance/full)
       paymentMethod, // This is the payment method (phonepe/cash)
       bookingDate: new Date(),
@@ -527,20 +527,20 @@ exports.verifyPayment = async (req, res) => {
       console.log('[verifyPayment] PhonePe verification response:', statusResponse.data);
 
       if (statusResponse.data && statusResponse.data.state === 'COMPLETED') {
-        // Payment successful - update paymentStatus to "Completed" using atomic update
+        // Payment successful - update paymentStatus to "completed" using atomic update
         // Check if already completed to avoid duplicate updates
-        if (booking.paymentStatus === "Completed") {
+        if (booking.paymentStatus === "completed") {
           console.log("[verifyPayment] Booking already confirmed, skipping update");
         } else {
           // Update booking status atomically
           const updatedBooking = await Booking.findOneAndUpdate(
             { 
               _id: booking._id,
-              paymentStatus: { $ne: "Completed" } // Only update if NOT already Completed
+              paymentStatus: { $ne: "completed" } // Only update if NOT already completed
             },
             {
               $set: {
-                paymentStatus: "Completed",
+                paymentStatus: "completed",
                 paymentId: phonepeOrderId
               }
             },
@@ -557,21 +557,21 @@ exports.verifyPayment = async (req, res) => {
           } else {
             booking = updatedBooking;
             console.log(
-              "[verifyPayment] ✅ Payment successful - Booking status set to 'Completed':",
+              "[verifyPayment] ✅ Payment successful - Booking status set to 'completed':",
               booking.customBookingId
             );
             console.log("[verifyPayment] Verified payment status:", booking.paymentStatus);
           }
         }
       } else if (statusResponse.data && statusResponse.data.state === 'FAILED') {
-        // Payment failed - update paymentStatus to "Failed"
-        if (booking.paymentStatus !== "Completed") {
+        // Payment failed - update paymentStatus to "failed"
+        if (booking.paymentStatus !== "completed") {
           await Booking.findOneAndUpdate(
             { _id: booking._id },
-            { $set: { paymentStatus: "Failed" } },
+            { $set: { paymentStatus: "failed" } },
             { new: true }
           );
-          console.log(`[verifyPayment] Updated booking ${booking.customBookingId} to Failed`);
+          console.log(`[verifyPayment] Updated booking ${booking.customBookingId} to failed`);
         }
         return res.status(400).json({
           success: false,
@@ -885,7 +885,7 @@ exports.phonePeCallback = async (req, res) => {
         console.log(`[phonePeCallback] Payment completed for booking: ${booking.customBookingId}`);
         
         // Check if already completed to avoid duplicate updates
-        if (booking.paymentStatus === "Completed") {
+        if (booking.paymentStatus === "completed") {
           console.log('[phonePeCallback] Booking already confirmed, skipping update');
           return res.json({
             success: true,
@@ -900,11 +900,11 @@ exports.phonePeCallback = async (req, res) => {
         const updatedBooking = await Booking.findOneAndUpdate(
           { 
             _id: booking._id,
-            paymentStatus: { $ne: "Completed" } // Only update if NOT already Completed
+            paymentStatus: { $ne: "completed" } // Only update if NOT already completed
           },
           {
             $set: {
-              paymentStatus: "Completed",
+              paymentStatus: "completed",
               paymentId: orderId
             }
           },
@@ -1051,14 +1051,14 @@ exports.phonePeCallback = async (req, res) => {
       } else if (response.data && response.data.state === 'FAILED') {
         console.log(`[phonePeCallback] Payment failed for booking: ${booking.customBookingId}`);
         
-        // Update booking status to Failed if not already Completed
-        if (booking.paymentStatus !== "Completed") {
+        // Update booking status to failed if not already completed
+        if (booking.paymentStatus !== "completed") {
           await Booking.findOneAndUpdate(
             { _id: booking._id },
-            { $set: { paymentStatus: "Failed" } },
+            { $set: { paymentStatus: "failed" } },
             { new: true }
           );
-          console.log(`[phonePeCallback] Updated booking ${booking.customBookingId} to Failed`);
+          console.log(`[phonePeCallback] Updated booking ${booking.customBookingId} to failed`);
         }
         
         return res.json({
@@ -1196,19 +1196,19 @@ exports.phonePeRedirect = async (req, res) => {
         // Track the PhonePe payment state
         phonepePaymentState = statusResponse.data?.state;
 
-        // If payment is COMPLETED, set paymentStatus to "Completed" (same as Razorpay)
+        // If payment is COMPLETED, set paymentStatus to "completed"
         if (statusResponse.data && statusResponse.data.state === 'COMPLETED') {
           console.log('[phonePeRedirect] Payment is COMPLETED - Updating booking status...');
           
-          // Use findOneAndUpdate for atomic update (same as Razorpay webhook pattern)
+          // Use findOneAndUpdate for atomic update
           const updatedBooking = await Booking.findOneAndUpdate(
             { 
               _id: booking._id,
-              paymentStatus: { $ne: "Completed" } // Only update if NOT already Completed
+              paymentStatus: { $ne: "completed" } // Only update if NOT already completed
             },
             {
               $set: {
-                paymentStatus: "Completed",
+                paymentStatus: "completed",
                 paymentId: phonepeOrderId
               }
             },
@@ -1220,19 +1220,19 @@ exports.phonePeRedirect = async (req, res) => {
 
           if (updatedBooking) {
             booking = updatedBooking; // Use the updated booking
-            console.log('[phonePeRedirect] ✅ Payment successful - Booking status updated to "Completed" (same as Razorpay):', booking.customBookingId);
+            console.log('[phonePeRedirect] ✅ Payment successful - Booking status updated to "completed":', booking.customBookingId);
             console.log('[phonePeRedirect] Verified booking status:', booking.paymentStatus);
           } else {
             // Booking might already be completed (race condition)
             booking = await Booking.findById(booking._id); // Reload to get current status
             console.log('[phonePeRedirect] Booking was already updated or status unchanged:', booking.paymentStatus);
             
-            // Force update if status is still not Completed
-            if (booking.paymentStatus !== "Completed") {
-              booking.paymentStatus = "Completed";
+            // Force update if status is still not completed
+            if (booking.paymentStatus !== "completed") {
+              booking.paymentStatus = "completed";
               booking.paymentId = phonepeOrderId;
               await booking.save();
-              console.log('[phonePeRedirect] ✅ Force updated booking status to "Completed"');
+              console.log('[phonePeRedirect] ✅ Force updated booking status to "completed"');
             }
           }
 
@@ -1346,14 +1346,14 @@ exports.phonePeRedirect = async (req, res) => {
         } else if (statusResponse.data && statusResponse.data.state === 'FAILED') {
           console.log('[phonePeRedirect] Payment FAILED for booking:', booking.customBookingId);
           
-          // Update booking status to Failed if not already Completed
-          if (booking.paymentStatus !== "Completed") {
+          // Update booking status to failed if not already completed
+          if (booking.paymentStatus !== "completed") {
             await Booking.findOneAndUpdate(
               { _id: booking._id },
-              { $set: { paymentStatus: "Failed" } },
+              { $set: { paymentStatus: "failed" } },
               { new: true }
             );
-            console.log(`[phonePeRedirect] Updated booking ${booking.customBookingId} to Failed`);
+            console.log(`[phonePeRedirect] Updated booking ${booking.customBookingId} to failed`);
           }
         } else {
           console.log('[phonePeRedirect] Payment state is not COMPLETED:', statusResponse.data?.state);
@@ -1403,11 +1403,11 @@ exports.phonePeRedirect = async (req, res) => {
             const retryUpdatedBooking = await Booking.findOneAndUpdate(
               { 
                 _id: booking._id,
-                paymentStatus: { $ne: "Completed" }
+                paymentStatus: { $ne: "completed" }
               },
               {
                 $set: {
-                  paymentStatus: "Completed",
+                  paymentStatus: "completed",
                   paymentId: booking.phonepeOrderId
                 }
               },
@@ -1419,16 +1419,16 @@ exports.phonePeRedirect = async (req, res) => {
             
             if (retryUpdatedBooking) {
               booking = retryUpdatedBooking;
-              console.log('[phonePeRedirect] ✅ Payment verified on retry - Status set to "Completed":', booking.customBookingId);
+              console.log('[phonePeRedirect] ✅ Payment verified on retry - Status set to "completed":', booking.customBookingId);
               console.log('[phonePeRedirect] Final booking status:', booking.paymentStatus);
             } else {
               // Reload and check
               booking = await Booking.findById(booking._id);
-              if (booking.paymentStatus !== "Completed") {
-                booking.paymentStatus = "Completed";
+              if (booking.paymentStatus !== "completed") {
+                booking.paymentStatus = "completed";
                 booking.paymentId = booking.phonepeOrderId;
                 await booking.save();
-                console.log('[phonePeRedirect] ✅ Force updated status to "Completed" on retry');
+                console.log('[phonePeRedirect] ✅ Force updated status to "completed" on retry');
               }
             }
           }
@@ -1447,9 +1447,9 @@ exports.phonePeRedirect = async (req, res) => {
       return res.redirect(`${frontendUrl}/ticket?error=bookingnotfound`);
     }
 
-    // CRITICAL: If payment was successful but status is still not "Completed", force update it
-    if (booking.phonepeOrderId && booking.paymentStatus !== "Completed") {
-      console.log('[phonePeRedirect] ⚠️ WARNING: Payment ID exists but status is not "Completed" - Attempting final update...');
+    // CRITICAL: If payment was successful but status is still not "completed", force update it
+    if (booking.phonepeOrderId && booking.paymentStatus !== "completed") {
+      console.log('[phonePeRedirect] ⚠️ WARNING: Payment ID exists but status is not "completed" - Attempting final update...');
       
       // Try one more time to check payment status and update
       try {
@@ -1488,7 +1488,7 @@ exports.phonePeRedirect = async (req, res) => {
             { _id: booking._id },
             {
               $set: {
-                paymentStatus: "Completed",
+                paymentStatus: "completed",
                 paymentId: booking.phonepeOrderId
               }
             },
@@ -1497,14 +1497,14 @@ exports.phonePeRedirect = async (req, res) => {
           
           if (finalUpdate) {
             booking = finalUpdate;
-            console.log('[phonePeRedirect] ✅ Final update successful - Status set to "Completed"');
+            console.log('[phonePeRedirect] ✅ Final update successful - Status set to "completed"');
           } else {
             // Fallback to direct save if findOneAndUpdate didn't work
-            booking.paymentStatus = "Completed";
+            booking.paymentStatus = "completed";
             booking.paymentId = booking.phonepeOrderId;
             await booking.save();
             booking = await Booking.findById(booking._id);
-            console.log('[phonePeRedirect] ✅ Final update via save - Status set to "Completed"');
+            console.log('[phonePeRedirect] ✅ Final update via save - Status set to "completed"');
           }
         }
       } catch (finalError) {
@@ -1527,7 +1527,7 @@ exports.phonePeRedirect = async (req, res) => {
     console.log('[phonePeRedirect] PhonePe payment state from API:', phonepePaymentState);
     
     // Check payment status - prioritize PhonePe API response, then booking database status
-    const isPaymentCompleted = booking.paymentStatus === "Completed" || phonepePaymentState === 'COMPLETED';
+    const isPaymentCompleted = booking.paymentStatus === "completed" || phonepePaymentState === 'COMPLETED';
     const isPaymentFailed = phonepePaymentState === 'FAILED';
     
     if (isPaymentCompleted) {
@@ -1573,8 +1573,8 @@ exports.phonePeRedirect = async (req, res) => {
           if (recheckState === 'COMPLETED') {
             // Update booking and redirect to success
             await Booking.findOneAndUpdate(
-              { _id: booking._id, paymentStatus: { $ne: "Completed" } },
-              { $set: { paymentStatus: "Completed", paymentId: phonepeOrderId } },
+              { _id: booking._id, paymentStatus: { $ne: "completed" } },
+              { $set: { paymentStatus: "completed", paymentId: phonepeOrderId } },
               { new: true }
             );
             const successUrl = `${frontendUrl}/payment/status?bookingId=${booking.customBookingId}&status=success`;
@@ -1635,7 +1635,7 @@ exports.getSingleBooking = async (req, res) => {
 
   try {
     const { customBookingId } = req.params;
-     const booking = await Booking.findOne({ customBookingId: customBookingId , paymentStatus: "Completed" });
+     const booking = await Booking.findOne({ customBookingId: customBookingId , paymentStatus: "completed" });
     if (!booking) {
       console.warn("[getSingleBooking] Booking not found:", customBookingId);
       return res
@@ -1754,7 +1754,7 @@ exports.getBookingsByEmailOrPhone = async (req, res) => {
     }
 
     // Only fetch completed bookings
-    query.paymentStatus = "Completed";
+    query.paymentStatus = "completed";
 
     const bookings = await Booking.find(query).sort({ bookingDate: -1 });
 
@@ -1785,7 +1785,7 @@ exports.getAllBookings = async (req, res) => {
   console.log("[getAllBookings] Fetching all bookings...");
   try {
     // ✅ FIX: Changed findOne to find to get an array of all matching bookings
-    const bookings = await Booking.find({ paymentStatus: "Completed"  });
+    const bookings = await Booking.find({ paymentStatus: "completed"  });
     
     // Now bookings.length will correctly report the number of documents found
     console.log("[getAllBookings] Total bookings found:", bookings.length);
@@ -1864,7 +1864,7 @@ exports.getBookingWithTicket = async (req, res) => {
     // Find the booking with completed payment
     const booking = await Booking.findOne({ 
       customBookingId: customBookingId,
-      paymentStatus: "Completed" 
+      paymentStatus: "completed" 
     });
     
     if (!booking) {
@@ -2100,7 +2100,7 @@ exports.razorpayWebhook = async (req, res) => {
       console.log("  - Razorpay Order ID:", existingBooking.razorpayOrderId || "N/A");
 
       // Check if already completed
-      if (existingBooking.paymentStatus === "Completed") {
+      if (existingBooking.paymentStatus === "completed") {
         console.log("[razorpayWebhook] ℹ️ Booking already confirmed, skipping update");
         return res.status(200).json({ 
           success: true, 
@@ -2110,18 +2110,18 @@ exports.razorpayWebhook = async (req, res) => {
       }
 
       // ✅ Step 6: Update booking atomically (prevents duplicate updates)
-      console.log("\n[razorpayWebhook] Step 6: Updating booking status to 'Completed' atomically...");
+      console.log("\n[razorpayWebhook] Step 6: Updating booking status to 'completed' atomically...");
       const oldStatus = existingBooking.paymentStatus;
       
       // Use findOneAndUpdate with conditions to prevent race conditions
       const booking = await Booking.findOneAndUpdate(
         { 
           _id: orderEntity.receipt,
-          paymentStatus: { $ne: "Completed" } // Only update if NOT already Completed
+          paymentStatus: { $ne: "completed" } // Only update if NOT already completed
         },
         {
           $set: {
-            paymentStatus: "Completed",
+            paymentStatus: "completed",
             paymentId: paymentEntity.id
           }
         },
