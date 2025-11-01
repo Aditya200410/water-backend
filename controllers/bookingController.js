@@ -1097,13 +1097,20 @@ exports.phonePeRedirect = async (req, res) => {
         console.log('[phonePeRedirect] PhonePe verification response:', statusResponse.data);
 
         if (statusResponse.data && statusResponse.data.state === 'COMPLETED') {
-          // Update booking if not already updated
+          // Update booking if not already updated (saves in Booking model, not orders)
           if (booking.paymentStatus !== "Completed") {
             booking.paymentStatus = "Completed";
             booking.paymentType = "PhonePe";
             booking.paymentId = phonepeOrderId;
             await booking.save();
-            console.log('[phonePeRedirect] Booking updated to Completed:', booking.customBookingId);
+            console.log('[phonePeRedirect] ✅ Booking saved in Booking model with Completed status:', booking.customBookingId);
+            console.log('[phonePeRedirect] Booking details:', {
+              _id: booking._id,
+              customBookingId: booking.customBookingId,
+              paymentStatus: booking.paymentStatus,
+              paymentType: booking.paymentType,
+              paymentId: booking.paymentId
+            });
 
             // Send notifications in background (non-blocking)
             (async () => {
@@ -1217,13 +1224,23 @@ exports.phonePeRedirect = async (req, res) => {
       }
     } catch (verifyError) {
       console.error('[phonePeRedirect] PhonePe verification error:', verifyError);
-      // Continue anyway - redirect to ticket page, which will handle status checking
+      // Continue anyway - booking exists, redirect to ticket page
+      // The ticket page will use "any" status endpoint to fetch the booking regardless of payment status
+    }
+
+    // Ensure booking exists before redirecting
+    if (!booking) {
+      console.error('[phonePeRedirect] No booking found to redirect');
+      const frontendUrl = process.env.FRONTEND_URL || 'https://www.waterparkchalo.com';
+      return res.redirect(`${frontendUrl}/ticket?error=bookingnotfound`);
     }
 
     // Always redirect to ticket page (like Razorpay did)
+    // Booking is saved in Booking model, ticket page will fetch it using /api/bookings/any/:id
     const frontendUrl = process.env.FRONTEND_URL || 'https://www.waterparkchalo.com';
     const ticketUrl = `${frontendUrl}/ticket?bookingId=${booking.customBookingId}`;
-    console.log('[phonePeRedirect] Redirecting to ticket page:', ticketUrl);
+    console.log('[phonePeRedirect] ✅ Redirecting to ticket page:', ticketUrl);
+    console.log('[phonePeRedirect] Booking will be fetched from Booking model (not orders)');
     return res.redirect(ticketUrl);
   } catch (error) {
     console.error('[phonePeRedirect] Error:', error);
