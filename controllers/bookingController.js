@@ -1075,7 +1075,10 @@ exports.phonePeRedirect = async (req, res) => {
       return res.redirect(`${frontendUrl}/ticket?bookingId=${bookingId || ''}&error=notfound`);
     }
 
-    // Check payment status with PhonePe API
+    // ALWAYS check payment status with PhonePe API and update if successful
+    console.log('[phonePeRedirect] Current booking status:', booking.paymentStatus);
+    console.log('[phonePeRedirect] PhonePe order IDs:', { orderId, phonepeOrderId: booking.phonepeOrderId });
+    
     try {
       const accessToken = await getPhonePeToken();
       const env = process.env.PHONEPE_ENV || 'sandbox';
@@ -1100,30 +1103,52 @@ exports.phonePeRedirect = async (req, res) => {
         );
 
         console.log('[phonePeRedirect] PhonePe verification response:', statusResponse.data);
+        console.log('[phonePeRedirect] Payment state:', statusResponse.data?.state);
 
         // If payment is COMPLETED, set paymentStatus to "Completed" (same as Razorpay)
         if (statusResponse.data && statusResponse.data.state === 'COMPLETED') {
-          // Update booking to "Completed" status if not already updated (same as Razorpay behavior)
-          if (booking.paymentStatus !== "Completed") {
-            booking.paymentStatus = "Completed";
-            booking.paymentType = "PhonePe";
-            booking.paymentId = phonepeOrderId;
-            await booking.save();
-            console.log('[phonePeRedirect] ✅ Payment successful - Booking status set to "Completed" (same as Razorpay):', booking.customBookingId);
-            console.log('[phonePeRedirect] Booking details:', {
+          console.log('[phonePeRedirect] Payment is COMPLETED - Updating booking status...');
+          
+          // Use findOneAndUpdate for atomic update (same as Razorpay webhook pattern)
+          const updatedBooking = await Booking.findOneAndUpdate(
+            { 
               _id: booking._id,
-              customBookingId: booking.customBookingId,
-              paymentStatus: booking.paymentStatus, // Should be "Completed"
-              paymentType: booking.paymentType,
-              paymentId: booking.paymentId
-            });
-            
-            // Reload booking from database to ensure we have the latest status
-            booking = await Booking.findById(booking._id);
-            console.log('[phonePeRedirect] Verified booking status after save:', booking.paymentStatus);
+              paymentStatus: { $ne: "Completed" } // Only update if NOT already Completed
+            },
+            {
+              $set: {
+                paymentStatus: "Completed",
+                paymentType: "PhonePe",
+                paymentId: phonepeOrderId
+              }
+            },
+            { 
+              new: true, // Return updated document
+              runValidators: true // Run model validators
+            }
+          );
 
-            // Send notifications in background (non-blocking)
-            (async () => {
+          if (updatedBooking) {
+            booking = updatedBooking; // Use the updated booking
+            console.log('[phonePeRedirect] ✅ Payment successful - Booking status updated to "Completed" (same as Razorpay):', booking.customBookingId);
+            console.log('[phonePeRedirect] Verified booking status:', booking.paymentStatus);
+          } else {
+            // Booking might already be completed (race condition)
+            booking = await Booking.findById(booking._id); // Reload to get current status
+            console.log('[phonePeRedirect] Booking was already updated or status unchanged:', booking.paymentStatus);
+            
+            // Force update if status is still not Completed
+            if (booking.paymentStatus !== "Completed") {
+              booking.paymentStatus = "Completed";
+              booking.paymentType = "PhonePe";
+              booking.paymentId = phonepeOrderId;
+              await booking.save();
+              console.log('[phonePeRedirect] ✅ Force updated booking status to "Completed"');
+            }
+          }
+
+          // Send notifications in background (non-blocking) only if payment was completed
+          (async () => {
               try {
                 const notificationPromises = [
                   sendWhatsAppMessage({
@@ -1229,8 +1254,11 @@ exports.phonePeRedirect = async (req, res) => {
                 console.error('[phonePeRedirect] Notification batch error:', err);
               }
             })();
-          }
+        } else {
+          console.log('[phonePeRedirect] Payment state is not COMPLETED:', statusResponse.data?.state);
         }
+      } else {
+        console.log('[phonePeRedirect] No phonepeOrderId available for status check');
       }
     } catch (verifyError) {
       console.error('[phonePeRedirect] PhonePe verification error:', verifyError);
@@ -1256,12 +1284,43 @@ exports.phonePeRedirect = async (req, res) => {
             }
           );
           
-          if (retryResponse.data && retryResponse.data.state === 'COMPLETED' && booking.paymentStatus !== "Completed") {
-            booking.paymentStatus = "Completed";
-            booking.paymentType = "PhonePe";
-            booking.paymentId = booking.phonepeOrderId;
-            await booking.save();
-            console.log('[phonePeRedirect] ✅ Payment verified on retry - Status set to "Completed":', booking.customBookingId);
+          if (retryResponse.data && retryResponse.data.state === 'COMPLETED') {
+            console.log('[phonePeRedirect] Retry verification found COMPLETED payment - Updating status...');
+            
+            // Use findOneAndUpdate for atomic update
+            const retryUpdatedBooking = await Booking.findOneAndUpdate(
+              { 
+                _id: booking._id,
+                paymentStatus: { $ne: "Completed" }
+              },
+              {
+                $set: {
+                  paymentStatus: "Completed",
+                  paymentType: "PhonePe",
+                  paymentId: booking.phonepeOrderId
+                }
+              },
+              { 
+                new: true,
+                runValidators: true
+              }
+            );
+            
+            if (retryUpdatedBooking) {
+              booking = retryUpdatedBooking;
+              console.log('[phonePeRedirect] ✅ Payment verified on retry - Status set to "Completed":', booking.customBookingId);
+              console.log('[phonePeRedirect] Final booking status:', booking.paymentStatus);
+            } else {
+              // Reload and check
+              booking = await Booking.findById(booking._id);
+              if (booking.paymentStatus !== "Completed") {
+                booking.paymentStatus = "Completed";
+                booking.paymentType = "PhonePe";
+                booking.paymentId = booking.phonepeOrderId;
+                await booking.save();
+                console.log('[phonePeRedirect] ✅ Force updated status to "Completed" on retry');
+              }
+            }
           }
         }
       } catch (retryError) {
@@ -1278,11 +1337,77 @@ exports.phonePeRedirect = async (req, res) => {
       return res.redirect(`${frontendUrl}/ticket?error=bookingnotfound`);
     }
 
+    // Final check: Reload booking one more time to ensure we have the latest status
+    booking = await Booking.findById(booking._id);
+    console.log('[phonePeRedirect] Final booking status before redirect:', booking.paymentStatus);
+    console.log('[phonePeRedirect] Final booking details:', {
+      customBookingId: booking.customBookingId,
+      paymentStatus: booking.paymentStatus,
+      paymentType: booking.paymentType,
+      paymentId: booking.paymentId
+    });
+
+    // CRITICAL: If payment was successful but status is still not "Completed", force update it
+    if (booking.phonepeOrderId && booking.paymentStatus !== "Completed") {
+      console.log('[phonePeRedirect] ⚠️ WARNING: Payment ID exists but status is not "Completed" - Attempting final update...');
+      
+      // Try one more time to check payment status and update
+      try {
+        const accessToken = await getPhonePeToken();
+        const env = process.env.PHONEPE_ENV || 'sandbox';
+        const baseUrl = env === 'production' 
+          ? 'https://api.phonepe.com/apis/pg'
+          : 'https://api-preprod.phonepe.com/apis/pg-sandbox';
+        
+        const finalCheckResponse = await axios.get(
+          `${baseUrl}/checkout/v2/order/${booking.phonepeOrderId}/status`,
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `O-Bearer ${accessToken}`
+            },
+            timeout: 10000
+          }
+        );
+        
+        if (finalCheckResponse.data && finalCheckResponse.data.state === 'COMPLETED') {
+          console.log('[phonePeRedirect] Final check found COMPLETED payment - Updating status...');
+          const finalUpdate = await Booking.findOneAndUpdate(
+            { _id: booking._id },
+            {
+              $set: {
+                paymentStatus: "Completed",
+                paymentType: "PhonePe",
+                paymentId: booking.phonepeOrderId
+              }
+            },
+            { new: true }
+          );
+          
+          if (finalUpdate) {
+            booking = finalUpdate;
+            console.log('[phonePeRedirect] ✅ Final update successful - Status set to "Completed"');
+          } else {
+            // Fallback to direct save if findOneAndUpdate didn't work
+            booking.paymentStatus = "Completed";
+            booking.paymentType = "PhonePe";
+            booking.paymentId = booking.phonepeOrderId;
+            await booking.save();
+            booking = await Booking.findById(booking._id);
+            console.log('[phonePeRedirect] ✅ Final update via save - Status set to "Completed"');
+          }
+        }
+      } catch (finalError) {
+        console.error('[phonePeRedirect] Final check failed, proceeding anyway:', finalError.message);
+      }
+    }
+
     // Always redirect to ticket page (like Razorpay did)
     // Booking is saved in Booking model, ticket page will fetch it using /api/bookings/any/:id
     const frontendUrl = process.env.FRONTEND_URL || 'https://www.waterparkchalo.com';
     const ticketUrl = `${frontendUrl}/ticket?bookingId=${booking.customBookingId}`;
     console.log('[phonePeRedirect] ✅ Redirecting to ticket page:', ticketUrl);
+    console.log('[phonePeRedirect] Booking status at redirect time:', booking.paymentStatus);
     console.log('[phonePeRedirect] Booking will be fetched from Booking model (not orders)');
     return res.redirect(ticketUrl);
   } catch (error) {
