@@ -1078,6 +1078,9 @@ exports.phonePeRedirect = async (req, res) => {
     console.log('[phonePeRedirect] Current booking status:', booking.paymentStatus);
     console.log('[phonePeRedirect] PhonePe order IDs:', { orderId, phonepeOrderId: booking.phonepeOrderId });
     
+    // Track the actual PhonePe payment state for proper redirect
+    let phonepePaymentState = null;
+    
     try {
       const accessToken = await getPhonePeToken();
       const env = process.env.PHONEPE_ENV || 'sandbox';
@@ -1103,6 +1106,9 @@ exports.phonePeRedirect = async (req, res) => {
 
         console.log('[phonePeRedirect] PhonePe verification response:', statusResponse.data);
         console.log('[phonePeRedirect] Payment state:', statusResponse.data?.state);
+
+        // Track the PhonePe payment state
+        phonepePaymentState = statusResponse.data?.state;
 
         // If payment is COMPLETED, set paymentStatus to "Completed" (same as Razorpay)
         if (statusResponse.data && statusResponse.data.state === 'COMPLETED') {
@@ -1284,6 +1290,11 @@ exports.phonePeRedirect = async (req, res) => {
             }
           );
           
+          // Track retry state as well
+          if (retryResponse.data && retryResponse.data.state) {
+            phonepePaymentState = retryResponse.data.state;
+          }
+          
           if (retryResponse.data && retryResponse.data.state === 'COMPLETED') {
             console.log('[phonePeRedirect] Retry verification found COMPLETED payment - Updating status...');
             
@@ -1358,6 +1369,11 @@ exports.phonePeRedirect = async (req, res) => {
           }
         );
         
+        // Track final check state as well
+        if (finalCheckResponse.data && finalCheckResponse.data.state) {
+          phonepePaymentState = finalCheckResponse.data.state;
+        }
+        
         if (finalCheckResponse.data && finalCheckResponse.data.state === 'COMPLETED') {
           console.log('[phonePeRedirect] Final check found COMPLETED payment - Updating status...');
           const finalUpdate = await Booking.findOneAndUpdate(
@@ -1400,17 +1416,23 @@ exports.phonePeRedirect = async (req, res) => {
       paymentMethod: booking.paymentMethod,
       paymentId: booking.paymentId
     });
+    console.log('[phonePeRedirect] PhonePe payment state from API:', phonepePaymentState);
     
-    if (booking.paymentStatus === "Completed") {
+    if (booking.paymentStatus === "Completed" || phonepePaymentState === 'COMPLETED') {
       // Payment successful - redirect to ticket page
       const ticketUrl = `${frontendUrl}/ticket?bookingId=${booking.customBookingId}`;
       console.log('[phonePeRedirect] ✅ Payment completed - Redirecting to ticket page:', ticketUrl);
       return res.redirect(ticketUrl);
-    } else {
-      // Payment failed or pending - redirect to payment failure page
+    } else if (phonepePaymentState === 'FAILED') {
+      // Payment failed - redirect to payment failure page
       const failureUrl = `${frontendUrl}/payment/status?bookingId=${booking.customBookingId}&status=failed`;
-      console.log('[phonePeRedirect] ❌ Payment not completed - Redirecting to failure page:', failureUrl);
+      console.log('[phonePeRedirect] ❌ Payment failed - Redirecting to failure page:', failureUrl);
       return res.redirect(failureUrl);
+    } else {
+      // Payment pending or unknown - redirect to payment status page with pending
+      const pendingUrl = `${frontendUrl}/payment/status?bookingId=${booking.customBookingId}&status=pending`;
+      console.log('[phonePeRedirect] ⏳ Payment pending - Redirecting to payment status page:', pendingUrl);
+      return res.redirect(pendingUrl);
     }
   } catch (error) {
     console.error('[phonePeRedirect] Error:', error);
@@ -1499,12 +1521,7 @@ exports.getBookingStatus = async (req, res) => {
     
     return res.status(200).json({ 
       success: true, 
-      booking: {
-        customBookingId: booking.customBookingId,
-        paymentStatus: booking.paymentStatus,
-        paymentId: booking.paymentId,
-        bookingDate: booking.bookingDate
-      }
+      booking
     });
   } catch (error) {
     console.error("[getBookingStatus] ❌ Error:", error.message);

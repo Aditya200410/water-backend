@@ -158,6 +158,33 @@ router.put("/:id", authenticateToken, isAdmin, async (req, res) => {
 // GET /api/orders?email=user@example.com
 router.get('/', getOrdersByEmail);
 
+// Route to get payment status for both orders and bookings by ID
+// GET /api/orders/status/:id (MUST come before /:id to avoid route conflict)
+router.get('/status/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const Booking = require('../models/Booking');
+    
+    // Try to find in Booking first
+    let booking = await Booking.findOne({ customBookingId: id });
+    if (booking) {
+      return res.status(200).json({ success: true, booking });
+    }
+    
+    // Try to find in Order
+    let order = await Order.findById(id);
+    if (order) {
+      return res.status(200).json({ success: true, order });
+    }
+    
+    // Not found in either
+    return res.status(404).json({ success: false, message: 'Not found' });
+  } catch (error) {
+    console.error('[Orders Status] Error:', error);
+    return res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+});
+
 // Route to get a single order by its ID
 // GET /api/orders/:id
 router.get('/:id', getOrderById);
