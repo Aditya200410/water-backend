@@ -527,19 +527,59 @@ exports.verifyPayment = async (req, res) => {
       console.log('[verifyPayment] PhonePe verification response:', statusResponse.data);
 
       if (statusResponse.data && statusResponse.data.state === 'COMPLETED') {
-        // Payment successful - set paymentStatus to "Completed" (same as Razorpay)
-        if (booking.paymentStatus !== "Completed") {
-          booking.paymentStatus = "Completed";
-          booking.paymentId = phonepeOrderId;
-          await booking.save();
-          console.log(
-            "[verifyPayment] ✅ Payment successful - Booking status set to 'Completed' (same as Razorpay):",
-            booking.customBookingId
-          );
-          console.log("[verifyPayment] Verified payment status:", booking.paymentStatus);
+        // Payment successful - update paymentStatus to "Completed" using atomic update
+        // Check if already completed to avoid duplicate updates
+        if (booking.paymentStatus === "Completed") {
+          console.log("[verifyPayment] Booking already confirmed, skipping update");
         } else {
-          console.log("[verifyPayment] Booking already has 'Completed' status");
+          // Update booking status atomically
+          const updatedBooking = await Booking.findOneAndUpdate(
+            { 
+              _id: booking._id,
+              paymentStatus: { $ne: "Completed" } // Only update if NOT already Completed
+            },
+            {
+              $set: {
+                paymentStatus: "Completed",
+                paymentId: phonepeOrderId
+              }
+            },
+            { 
+              new: true, // Return updated document
+              runValidators: true // Run model validators
+            }
+          );
+
+          if (!updatedBooking) {
+            console.log("[verifyPayment] Booking was already updated (race condition avoided)");
+            // Reload booking to get current status
+            booking = await Booking.findById(booking._id);
+          } else {
+            booking = updatedBooking;
+            console.log(
+              "[verifyPayment] ✅ Payment successful - Booking status set to 'Completed':",
+              booking.customBookingId
+            );
+            console.log("[verifyPayment] Verified payment status:", booking.paymentStatus);
+          }
         }
+      } else if (statusResponse.data && statusResponse.data.state === 'FAILED') {
+        // Payment failed - update paymentStatus to "Failed"
+        if (booking.paymentStatus !== "Completed") {
+          await Booking.findOneAndUpdate(
+            { _id: booking._id },
+            { $set: { paymentStatus: "Failed" } },
+            { new: true }
+          );
+          console.log(`[verifyPayment] Updated booking ${booking.customBookingId} to Failed`);
+        }
+        return res.status(400).json({
+          success: false,
+          message: 'Payment failed',
+          state: 'FAILED',
+          errorCode: statusResponse.data?.errorCode,
+          detailedErrorCode: statusResponse.data?.detailedErrorCode
+        });
       } else {
         console.warn('[verifyPayment] Payment not completed yet:', statusResponse.data?.state);
         return res.status(400).json({
@@ -1010,11 +1050,23 @@ exports.phonePeCallback = async (req, res) => {
         });
       } else if (response.data && response.data.state === 'FAILED') {
         console.log(`[phonePeCallback] Payment failed for booking: ${booking.customBookingId}`);
+        
+        // Update booking status to Failed if not already Completed
+        if (booking.paymentStatus !== "Completed") {
+          await Booking.findOneAndUpdate(
+            { _id: booking._id },
+            { $set: { paymentStatus: "Failed" } },
+            { new: true }
+          );
+          console.log(`[phonePeCallback] Updated booking ${booking.customBookingId} to Failed`);
+        }
+        
         return res.json({
           success: false,
           message: 'Payment failed',
           orderId: orderId,
           merchantOrderId: merchantOrderId,
+          bookingId: booking.customBookingId,
           status: 'FAILED',
           errorCode: response.data.errorCode,
           detailedErrorCode: response.data.detailedErrorCode
@@ -1259,7 +1311,16 @@ exports.phonePeRedirect = async (req, res) => {
             })();
         } else if (statusResponse.data && statusResponse.data.state === 'FAILED') {
           console.log('[phonePeRedirect] Payment FAILED for booking:', booking.customBookingId);
-          // Don't update the booking status, just redirect to failure page
+          
+          // Update booking status to Failed if not already Completed
+          if (booking.paymentStatus !== "Completed") {
+            await Booking.findOneAndUpdate(
+              { _id: booking._id },
+              { $set: { paymentStatus: "Failed" } },
+              { new: true }
+            );
+            console.log(`[phonePeRedirect] Updated booking ${booking.customBookingId} to Failed`);
+          }
         } else {
           console.log('[phonePeRedirect] Payment state is not COMPLETED:', statusResponse.data?.state);
         }

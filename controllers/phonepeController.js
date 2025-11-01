@@ -1,8 +1,7 @@
 const axios = require('axios');
 const crypto = require('crypto');
 require('dotenv').config();
-const Order = require('../models/Order');
-const { sendOrderConfirmationEmail } = require('./orderController');
+const Booking = require('../models/Booking');
 
 // Cache for OAuth token
 let oauthToken = null;
@@ -317,33 +316,95 @@ exports.phonePeCallback = async (req, res) => {
         }
       );
       console.log('PhonePe verification response:', response.data);
+      
+      // Find booking by merchantOrderId or orderId
+      let booking = await Booking.findOne({ phonepeMerchantOrderId: merchantOrderId });
+      if (!booking) {
+        booking = await Booking.findOne({ phonepeOrderId: orderId });
+      }
+      
       if (response.data && response.data.state === 'COMPLETED') {
         console.log(`Payment completed for transaction: ${merchantOrderId}`);
-        // Update order in DB and send confirmation email
-        const order = await Order.findOneAndUpdate(
-          { transactionId: orderId },
-          { paymentStatus: 'completed' },
-          { new: true }
-        );
-        if (order) {
-          await sendOrderConfirmationEmail(order);
+        
+        // Update booking in DB if found
+        if (booking) {
+          // Check if already completed to avoid duplicate updates
+          if (booking.paymentStatus === "Completed") {
+            console.log('Booking already confirmed, skipping update');
+            return res.json({
+              success: true,
+              message: 'Booking already confirmed',
+              orderId: orderId,
+              merchantOrderId: merchantOrderId,
+              bookingId: booking.customBookingId,
+              status: 'COMPLETED'
+            });
+          }
+
+          // Update booking status atomically
+          const updatedBooking = await Booking.findOneAndUpdate(
+            { 
+              _id: booking._id,
+              paymentStatus: { $ne: "Completed" } // Only update if NOT already Completed
+            },
+            {
+              $set: {
+                paymentStatus: "Completed",
+                paymentId: orderId
+              }
+            },
+            { 
+              new: true, // Return updated document
+              runValidators: true // Run model validators
+            }
+          );
+
+          if (!updatedBooking) {
+            console.log('Booking was already updated (race condition avoided)');
+            return res.json({
+              success: true,
+              message: 'Booking already confirmed',
+              orderId: orderId,
+              merchantOrderId: merchantOrderId,
+              bookingId: booking.customBookingId,
+              status: 'COMPLETED'
+            });
+          }
+
+          console.log('✅ BOOKING UPDATED SUCCESSFULLY!');
+          console.log('  - Custom Booking ID:', updatedBooking.customBookingId);
+          console.log('  - Payment Status:', updatedBooking.paymentStatus);
+          console.log('  - Payment ID:', updatedBooking.paymentId);
         } else {
-          console.warn('Order not found for transactionId:', orderId);
+          console.warn('Booking not found for transactionId:', orderId);
         }
+        
         return res.json({
           success: true,
           message: 'Payment completed successfully',
           orderId: orderId,
           merchantOrderId: merchantOrderId,
+          bookingId: booking?.customBookingId,
           status: 'COMPLETED'
         });
       } else if (response.data && response.data.state === 'FAILED') {
         console.log(`Payment failed for transaction: ${merchantOrderId}`);
+        
+        // Update booking status to Failed if found
+        if (booking) {
+          await Booking.findOneAndUpdate(
+            { _id: booking._id },
+            { $set: { paymentStatus: "Failed" } },
+            { new: true }
+          );
+        }
+        
         return res.json({
           success: false,
           message: 'Payment failed',
           orderId: orderId,
           merchantOrderId: merchantOrderId,
+          bookingId: booking?.customBookingId,
           status: 'FAILED',
           errorCode: response.data.errorCode,
           detailedErrorCode: response.data.detailedErrorCode
@@ -355,6 +416,7 @@ exports.phonePeCallback = async (req, res) => {
           message: 'Payment is pending',
           orderId: orderId,
           merchantOrderId: merchantOrderId,
+          bookingId: booking?.customBookingId,
           status: 'PENDING'
         });
       }
@@ -415,16 +477,56 @@ exports.getPhonePeStatus = async (req, res) => {
       }
     );
     console.log('PhonePe status response:', response.data);
-    // Only COMPLETED is considered success; all others are not
+    
     // Try to extract merchantOrderId from metaInfo if available
     let merchantOrderId = null;
     if (response.data && response.data.metaInfo && response.data.metaInfo.merchantOrderId) {
       merchantOrderId = response.data.metaInfo.merchantOrderId;
-    } else if (response.data && response.data.orderId) {
-      // Optionally, look up merchantOrderId from your DB if you store the mapping
-      // merchantOrderId = await lookupMerchantOrderId(response.data.orderId);
     }
+    
+    // Find booking by orderId or merchantOrderId
+    let booking = null;
+    if (orderId) {
+      booking = await Booking.findOne({ phonepeOrderId: orderId });
+    }
+    if (!booking && merchantOrderId) {
+      booking = await Booking.findOne({ phonepeMerchantOrderId: merchantOrderId });
+    }
+    
+    // Update booking status based on PhonePe response
     if (response.data && response.data.state) {
+      if (booking) {
+        if (response.data.state === 'COMPLETED') {
+          // Only update if not already Completed
+          if (booking.paymentStatus !== "Completed") {
+            await Booking.findOneAndUpdate(
+              { 
+                _id: booking._id,
+                paymentStatus: { $ne: "Completed" }
+              },
+              {
+                $set: {
+                  paymentStatus: "Completed",
+                  paymentId: orderId
+                }
+              },
+              { new: true }
+            );
+            console.log(`Updated booking ${booking.customBookingId} to Completed`);
+          }
+        } else if (response.data.state === 'FAILED') {
+          // Update to Failed if not already Completed
+          if (booking.paymentStatus !== "Completed") {
+            await Booking.findOneAndUpdate(
+              { _id: booking._id },
+              { $set: { paymentStatus: "Failed" } },
+              { new: true }
+            );
+            console.log(`Updated booking ${booking.customBookingId} to Failed`);
+          }
+        }
+      }
+      
       return res.json({
         success: response.data.state === 'COMPLETED',
         data: {
@@ -436,7 +538,8 @@ exports.getPhonePeStatus = async (req, res) => {
           paymentDetails: response.data.paymentDetails || [],
           errorCode: response.data.errorCode,
           detailedErrorCode: response.data.detailedErrorCode,
-          errorContext: response.data.errorContext
+          errorContext: response.data.errorContext,
+          bookingId: booking?.customBookingId
         },
         message: response.data.state === 'COMPLETED' ? 'Payment completed' : (response.data.state === 'FAILED' ? 'Payment failed' : 'Payment pending')
       });
