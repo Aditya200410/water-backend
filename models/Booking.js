@@ -28,10 +28,8 @@ waternumber: { type: String, required: true },
 
   advanceAmount: { type: Number, required: true }, // Total price is mandatory
   paymentId: String,
-  razorpayOrderId: String, // Store Razorpay order ID for webhook lookup (legacy)
-  phonepeOrderId: String, // Store PhonePe order ID (transaction ID)
-  phonepeMerchantOrderId: String, // Store PhonePe merchant order ID
-  paymentStatus: { type: String, default: "pending" },
+  razorpayOrderId: String, // Store Razorpay order ID for webhook lookup
+  paymentStatus: { type: String, default: "Pending" },
   
   totalAmount : { type: Number, required: true ,default: 0}, // Total price is mandatory
 terms:{type:String,required:false},
