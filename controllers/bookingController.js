@@ -3,7 +3,7 @@ const Booking = require("../models/Booking");
 const User = require("../models/User");
 const nodemailer = require("nodemailer");
 const crypto = require("crypto");
-const Razorpay = require("razorpay");
+const axios = require('axios');
 const { sendWhatsAppMessage } = require("../service/whatsappService");
 const {selfWhatsAppMessage }= require("../service/whatsappself");
 const {parkWhatsAppMessage }= require("../service/whatsapppark")
@@ -38,20 +38,73 @@ async function getNextSequenceValue(sequenceName) {
   return sequenceDocument.sequence_value;
 }
 // ----------------------------
-// Razorpay Initialization
+// PhonePe OAuth Token Cache
 // ----------------------------
-let razorpay = null;
-if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET) {
-  console.log("[Init] Initializing Razorpay with provided credentials...");
-  razorpay = new Razorpay({
-    key_id: process.env.RAZORPAY_KEY_ID,
-    key_secret: process.env.RAZORPAY_KEY_SECRET,
-  });
-  console.log("[Init] Razorpay initialized successfully.");
-} else {
-  console.warn(
-    "[Init] Razorpay credentials missing. Online payments will fail until configured."
-  );
+let oauthToken = null;
+let tokenExpiry = null;
+
+// Get OAuth token for PhonePe API
+async function getPhonePeToken() {
+  try {
+    // Check if we have a valid cached token
+    if (oauthToken && tokenExpiry && new Date() < tokenExpiry) {
+      return oauthToken;
+    }
+
+    const clientId = process.env.PHONEPE_CLIENT_ID;
+    const clientSecret = process.env.PHONEPE_CLIENT_SECRET;
+    const clientVersion = '1';      
+    const env = process.env.PHONEPE_ENV || 'sandbox';
+
+    if (!clientId || !clientSecret) {
+      throw new Error('PhonePe OAuth credentials not configured');
+    }
+
+    // Set OAuth URL based on environment
+    let oauthUrl;
+    if (env === 'production') 
+      oauthUrl = 'https://api.phonepe.com/apis/identity-manager/v1/oauth/token';
+    else
+      oauthUrl = 'https://api-preprod.phonepe.com/apis/pg-sandbox/v1/oauth/token';
+    
+
+    console.log('[getPhonePeToken] Getting PhonePe OAuth token from:', oauthUrl);
+
+    const response = await axios.post(oauthUrl, 
+      new URLSearchParams({
+        client_id: clientId,
+        client_version: clientVersion,
+        client_secret: clientSecret,
+        grant_type: 'client_credentials'
+      }), 
+      {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        timeout: 30000
+      }
+    );
+
+    if (response.data && response.data.access_token) {
+      oauthToken = response.data.access_token;
+      // Set expiry based on expires_at field from response
+      if (response.data.expires_at) {
+        tokenExpiry = new Date(response.data.expires_at * 1000); // Convert from seconds to milliseconds
+      } else {
+        // Fallback to 1 hour if expires_at is not provided
+        tokenExpiry = new Date(Date.now() + 60 * 60 * 1000);
+      }
+      
+      console.log('[getPhonePeToken] PhonePe OAuth token obtained successfully');
+      console.log('[getPhonePeToken] Token expires at:', tokenExpiry);
+      return oauthToken;
+    } else {
+      throw new Error('Invalid OAuth response from PhonePe');
+    }
+  } catch (error) {
+    console.error('[getPhonePeToken] PhonePe OAuth token error:', error.response?.data || error.message);
+    throw new Error('Failed to get PhonePe OAuth token');
+  }
 }
 
 // ----------------------------
@@ -116,7 +169,7 @@ const safeDate = (value) => {
 
 
 // ----------------------------
-// Create Booking (with Razorpay integration)
+// Create Booking (with PhonePe integration)
 // ----------------------------
 exports.createBooking = async (req, res) => {
   console.log("[createBooking] Request body:", req.body);
@@ -213,7 +266,7 @@ console.log("[createBooking] Generating custom booking ID for:", waterparkName);
       leftamount: calculatedLeftAmount,
       paymentStatus: paymentMethod === "cash" ? "Pending" : "Initiated",
       paymentType, // This is the product's payment type (advance/full)
-      paymentMethod, // This is the payment method (razorpay/cash)
+      paymentMethod, // This is the payment method (phonepe/cash)
       bookingDate: new Date(),
       terms
     };
@@ -278,57 +331,111 @@ console.log("[createBooking] Generating custom booking ID for:", waterparkName);
             .json({ success: true, message: "Booking created successfully", booking });
     }
 
-    if (!razorpay) {
-        console.error("[createBooking] Razorpay not configured.");
-        return res
-            .status(500)
-            .json({
-                success: false,
-                message: "Payment gateway not configured",
-                booking,
-            });
+    // ✅ PhonePe Payment Integration
+    try {
+      const accessToken = await getPhonePeToken();
+      const env = process.env.PHONEPE_ENV || 'sandbox';
+      const frontendUrl = process.env.FRONTEND_URL || 'https://www.waterparkchalo.com';
+      
+      // Set base URL for payment API based on PhonePe documentation
+      const baseUrl = env === 'production' 
+        ? 'https://api.phonepe.com/apis/pg'
+        : 'https://api-preprod.phonepe.com/apis/pg-sandbox';
+
+      const apiEndpoint = '/checkout/v2/pay';
+      const merchantOrderId = `MT${Date.now()}${Math.random().toString(36).substr(2, 6)}`;
+
+      // Prepare payload according to PhonePe API documentation
+      const payload = {
+        merchantOrderId: merchantOrderId,
+        amount: advancePaise, // Already in paise
+        expireAfter: 1200, // 20 minutes expiry
+        metaInfo: {
+          udf1: name,
+          udf2: email,
+          udf3: phone,
+          udf4: booking._id.toString(),
+          udf5: booking.customBookingId,
+          udf6: waterparkName,
+          udf7: waternumber || '',
+        },
+        paymentFlow: {
+          type: 'PG_CHECKOUT',
+          message: `Booking payment for ${waterparkName}`,
+          merchantUrls: {
+            redirectUrl: `${frontendUrl.replace(/\/+$/, '')}/payment/status?bookingId=${booking.customBookingId}&merchantOrderId=${merchantOrderId}`
+          }
+        }
+      };
+
+      console.log('[createBooking] Creating PhonePe order with payload:', {
+        ...payload,
+        amount: payload.amount,
+        accessToken: '***HIDDEN***'
+      });
+
+      const response = await axios.post(
+        baseUrl + apiEndpoint,
+        payload,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `O-Bearer ${accessToken}`
+          },
+          timeout: 30000
+        }
+      );
+
+      console.log('[createBooking] PhonePe API response:', response.data);
+
+      // Success response from PhonePe
+      if (response.data && response.data.orderId && response.data.redirectUrl) {
+        const orderId = response.data.orderId;
+        const redirectUrl = response.data.redirectUrl;
+        const state = response.data.state;
+
+        // Save PhonePe order details to booking
+        booking.phonepeOrderId = orderId;
+        booking.phonepeMerchantOrderId = merchantOrderId;
+        await booking.save();
+        console.log('[createBooking] Saved PhonePe order details to booking:', { orderId, merchantOrderId });
+
+        return res.status(200).json({
+          success: true,
+          message: "PhonePe order created",
+          orderId: orderId,
+          merchantOrderId: merchantOrderId,
+          redirectUrl: redirectUrl,
+          state: state,
+          booking,
+        });
+      } else {
+        console.error('[createBooking] PhonePe payment initiation failed:', response.data);
+        return res.status(500).json({
+          success: false,
+          message: response.data.message || 'PhonePe payment initiation failed',
+          booking,
+        });
+      }
+    } catch (error) {
+      console.error('[createBooking] PhonePe order error:', error.response?.data || error.message);
+      
+      let errorMessage = 'Failed to create PhonePe order';
+      if (error.response?.data?.message) {
+        errorMessage = error.response.data.message;
+      } else if (error.code === 'ECONNABORTED') {
+        errorMessage = 'Payment gateway timeout. Please try again.';
+      } else if (error.code === 'ENOTFOUND') {
+        errorMessage = 'Payment gateway not reachable. Please try again.';
+      }
+      
+      return res.status(500).json({
+        success: false,
+        message: errorMessage,
+        booking,
+        error: error.response?.data || error.message
+      });
     }
-
-    const orderOptions = {
-      amount: advancePaise,
-      currency: "INR",
-      receipt: booking._id.toString(), // Internal receipt still uses the unique _id
-      payment_capture: 1,
-      notes: {
-        bookingId: booking._id.toString(),
-        customBookingId: booking.customBookingId, // You can add the custom ID here for reference
-        waterparkName,
-        customerName: name,
-        customerEmail: email,
-        customerPhone: phone,
-        waternumber: waternumber,
-      },
-    };
-
-    console.log(
-      "[createBooking] Creating Razorpay order with options:",
-      orderOptions
-    );
-    const order = await razorpay.orders.create(orderOptions);
-    console.log("[createBooking] Razorpay order created:", order.id);
-
-    // ✅ Save the Razorpay order ID to the booking for webhook lookup
-    booking.razorpayOrderId = order.id;
-    await booking.save();
-    console.log("[createBooking] Saved Razorpay order ID to booking:", order.id);
-
-    return res.status(200).json({
-      success: true,
-      message: "Razorpay order created",
-      orderId: order.id,
-      booking,
-      key: process.env.RAZORPAY_KEY_ID,
-      amount: advancePaise,
-      currency: "INR",
-      name: "Waterpark Chalo",
-      description: `Booking for ${waterparkName}`,
-      prefill: { name, email, contact: phone },
-    });
   } catch (error) {
     console.error("[createBooking] Error:", error);
     // Handle potential duplicate key error for customBookingId
@@ -351,62 +458,98 @@ console.log("[createBooking] Generating custom booking ID for:", waterparkName);
 
 
 // ----------------------------
-// Verify Payment
+// Verify Payment (PhonePe)
 // ----------------------------
 exports.verifyPayment = async (req, res) => {
   console.log("[verifyPayment] Request body:", req.body);
 
   try {
     const {
-      razorpay_order_id,
-      razorpay_payment_id,
-      razorpay_signature,
-      bookingId,
-      redirect,
+      orderId,
+      merchantOrderId,
+      customBookingId,
     } = req.body;
 
-    if (
-      !razorpay_order_id ||
-      !razorpay_payment_id ||
-      !razorpay_signature ||
-      !bookingId
-    ) {
+    if (!orderId && !merchantOrderId && !customBookingId) {
       console.warn("[verifyPayment] Missing required fields.");
       return res
         .status(400)
-        .json({ success: false, message: "Missing required fields" });
+        .json({ success: false, message: "Missing required fields: orderId or merchantOrderId or customBookingId" });
     }
 
-    console.log("[verifyPayment] Generating signature for verification...");
-    const generatedSignature = crypto
-      .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET || "")
-      .update(`${razorpay_order_id}|${razorpay_payment_id}`)
-      .digest("hex");
-
-    console.log("[verifyPayment] Generated Signature:", generatedSignature);
-    if (generatedSignature !== razorpay_signature) {
-      console.warn("[verifyPayment] Signature mismatch.");
-      return res
-        .status(400)
-        .json({ success: false, message: "Invalid payment signature." });
+    // Find booking by customBookingId first, then by PhonePe order IDs
+    let booking = null;
+    if (customBookingId) {
+      booking = await Booking.findOne({ customBookingId });
+    } else if (merchantOrderId) {
+      booking = await Booking.findOne({ phonepeMerchantOrderId: merchantOrderId });
+    } else if (orderId) {
+      booking = await Booking.findOne({ phonepeOrderId: orderId });
     }
 
-    const booking = await Booking.findById(bookingId);
     if (!booking) {
-      console.warn("[verifyPayment] Booking not found:", bookingId);
+      console.warn("[verifyPayment] Booking not found:", { orderId, merchantOrderId, customBookingId });
       return res
         .status(404)
         .json({ success: false, message: "Booking not found." });
     }
 
-    booking.paymentStatus = "Completed";
-    booking.paymentType = "Razorpay";
-    booking.paymentId = razorpay_payment_id;
-    await booking.save();
-    console.log(
-      "[verifyPayment] Booking updated with payment success:",
-      booking.customBookingId
-    );
+    // Verify payment status with PhonePe API
+    try {
+      const accessToken = await getPhonePeToken();
+      const env = process.env.PHONEPE_ENV || 'sandbox';
+      const baseUrl = env === 'production' 
+        ? 'https://api.phonepe.com/apis/pg'
+        : 'https://api-preprod.phonepe.com/apis/pg-sandbox';
+      
+      // Use orderId (PhonePe's transaction ID) for status check
+      const phonepeOrderId = orderId || booking.phonepeOrderId;
+      if (!phonepeOrderId) {
+        throw new Error('PhonePe order ID not found');
+      }
+
+      const apiEndpoint = `/checkout/v2/order/${phonepeOrderId}/status`;
+      console.log(`[verifyPayment] Checking PhonePe status for orderId: ${phonepeOrderId}`);
+      
+      const statusResponse = await axios.get(
+        baseUrl + apiEndpoint,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `O-Bearer ${accessToken}`
+          },
+          timeout: 30000
+        }
+      );
+
+      console.log('[verifyPayment] PhonePe verification response:', statusResponse.data);
+
+      if (statusResponse.data && statusResponse.data.state === 'COMPLETED') {
+        // Only COMPLETED is considered success
+        booking.paymentStatus = "Completed";
+        booking.paymentType = "PhonePe";
+        booking.paymentId = phonepeOrderId;
+        await booking.save();
+        console.log(
+          "[verifyPayment] Booking updated with payment success:",
+          booking.customBookingId
+        );
+      } else {
+        console.warn('[verifyPayment] Payment not completed yet:', statusResponse.data?.state);
+        return res.status(400).json({
+          success: false,
+          message: `Payment status: ${statusResponse.data?.state || 'PENDING'}`,
+          state: statusResponse.data?.state || 'PENDING'
+        });
+      }
+    } catch (verifyError) {
+      console.error('[verifyPayment] PhonePe verification error:', verifyError);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to verify payment with PhonePe',
+        error: verifyError.message
+      });
+    }
 
     console.log("[verifyPayment] Payment verified successfully");
 
@@ -638,6 +781,264 @@ sendEmail(
 
 // --- The rest of your controller functions (getSingleBooking, getAllBookings, etc.) remain unchanged. ---
 // --- I am including them here so you can copy-paste the whole file. ---
+
+// ----------------------------
+// PhonePe Callback Handler for Bookings
+// ----------------------------
+exports.phonePeCallback = async (req, res) => {
+  try {
+    const { merchantOrderId, orderId, amount, status, code, merchantId } = req.body;
+    console.log('[phonePeCallback] PhonePe callback received for booking:', req.body);
+    
+    if (!merchantOrderId || !orderId || !status) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid callback data: merchantOrderId, orderId, and status are required'
+      });
+    }
+
+    // Find booking by merchantOrderId
+    let booking = await Booking.findOne({ phonepeMerchantOrderId: merchantOrderId });
+    
+    if (!booking) {
+      // Try to find by orderId as fallback
+      booking = await Booking.findOne({ phonepeOrderId: orderId });
+    }
+
+    if (!booking) {
+      console.warn('[phonePeCallback] Booking not found:', { merchantOrderId, orderId });
+      return res.status(404).json({
+        success: false,
+        message: 'Booking not found'
+      });
+    }
+
+    try {
+      const accessToken = await getPhonePeToken();
+      const env = process.env.PHONEPE_ENV || 'sandbox';
+      const baseUrl = env === 'production' 
+        ? 'https://api.phonepe.com/apis/pg'
+        : 'https://api-preprod.phonepe.com/apis/pg-sandbox';
+      
+      // Use orderId (PhonePe's transaction ID) for status check
+      const apiEndpoint = `/checkout/v2/order/${orderId}/status`;
+      const response = await axios.get(
+        baseUrl + apiEndpoint,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `O-Bearer ${accessToken}`
+          },
+          timeout: 30000
+        }
+      );
+
+      console.log('[phonePeCallback] PhonePe verification response:', response.data);
+      
+      if (response.data && response.data.state === 'COMPLETED') {
+        console.log(`[phonePeCallback] Payment completed for booking: ${booking.customBookingId}`);
+        
+        // Check if already completed to avoid duplicate updates
+        if (booking.paymentStatus === "Completed") {
+          console.log('[phonePeCallback] Booking already confirmed, skipping update');
+          return res.json({
+            success: true,
+            message: 'Booking already confirmed',
+            bookingId: booking.customBookingId,
+            merchantOrderId: merchantOrderId,
+            status: 'COMPLETED'
+          });
+        }
+
+        // Update booking status atomically
+        const updatedBooking = await Booking.findOneAndUpdate(
+          { 
+            _id: booking._id,
+            paymentStatus: { $ne: "Completed" } // Only update if NOT already Completed
+          },
+          {
+            $set: {
+              paymentStatus: "Completed",
+              paymentId: orderId,
+              paymentType: "PhonePe"
+            }
+          },
+          { 
+            new: true, // Return updated document
+            runValidators: true // Run model validators
+          }
+        );
+
+        if (!updatedBooking) {
+          console.log('[phonePeCallback] Booking was already updated (race condition avoided)');
+          return res.json({
+            success: true,
+            message: 'Booking already confirmed',
+            bookingId: booking.customBookingId,
+            merchantOrderId: merchantOrderId,
+            status: 'COMPLETED'
+          });
+        }
+
+        console.log('[phonePeCallback] ✅ BOOKING UPDATED SUCCESSFULLY!');
+        console.log('  - Custom Booking ID:', updatedBooking.customBookingId);
+        console.log('  - Payment Status:', updatedBooking.paymentStatus);
+        console.log('  - Payment ID:', updatedBooking.paymentId);
+
+        // Send notifications in background (non-blocking)
+        (async () => {
+          try {
+            console.log('[phonePeCallback] Sending notifications in background...');
+            
+            const notificationPromises = [
+              sendWhatsAppMessage({
+                id: updatedBooking.waterpark.toString(),
+                waterparkName: updatedBooking.waterparkName,
+                customBookingId: updatedBooking.customBookingId,
+                customerName: updatedBooking.name,
+                customerPhone: updatedBooking.phone,
+                date: updatedBooking.date,
+                adultquantity: updatedBooking.adults,
+                childquantity: updatedBooking.children,
+                totalAmount: updatedBooking.totalAmount,
+                left: updatedBooking.leftamount,
+              }).catch(err => console.error('[phonePeCallback] Customer WhatsApp error:', err.message)),
+              
+              selfWhatsAppMessage({
+                id: updatedBooking.waterpark.toString(),
+                waterparkName: updatedBooking.waterparkName,
+                customBookingId: updatedBooking.customBookingId,
+                customerName: updatedBooking.name,
+                customerPhone: updatedBooking.phone,
+                date: updatedBooking.date,
+                adultquantity: updatedBooking.adults,
+                childquantity: updatedBooking.children,
+                totalAmount: updatedBooking.totalAmount,
+                left: updatedBooking.leftamount,
+              }).catch(err => console.error('[phonePeCallback] Self WhatsApp error:', err.message)),
+
+              parkWhatsAppMessage({
+                id: updatedBooking.waterpark.toString(),
+                waterparkName: updatedBooking.waterparkName,
+                customBookingId: updatedBooking.customBookingId,
+                customerName: updatedBooking.name,
+                waternumber: updatedBooking.waternumber,
+                customerPhone: updatedBooking.phone,
+                date: updatedBooking.date,
+                adultquantity: updatedBooking.adults,
+                childquantity: updatedBooking.children,
+                totalAmount: updatedBooking.totalAmount,
+                left: updatedBooking.leftamount,
+              }).catch(err => console.error('[phonePeCallback] Park WhatsApp error:', err.message)),
+
+              sendEmail(
+                [updatedBooking.email, "am542062@gmail.com"],
+                `✅ Your Booking is Confirmed for ${updatedBooking.waterparkName}!`,
+                `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Booking Confirmation</title>
+  <style>
+    body { margin: 0; padding: 0; background-color: #f4f4f7; font-family: Arial, sans-serif; }
+    .container { max-width: 600px; margin: 20px auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; border: 1px solid #dee2e6; }
+    .header { background-color: #007bff; color: #ffffff; padding: 30px 20px; text-align: center; }
+    .header h1 { margin: 0; font-size: 28px; font-weight: bold; }
+    .content { padding: 30px; color: #333333; line-height: 1.6; }
+    .content h2 { color: #0056b3; font-size: 22px; margin-top: 0; }
+    .details-table, .payment-table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+    .details-table td, .payment-table td { padding: 12px 0; font-size: 16px; border-bottom: 1px solid #eeeeee; }
+    .details-table td:first-child { color: #555555; }
+    .details-table td:last-child, .payment-table td:last-child { text-align: right; font-weight: bold; }
+    .payment-table .total-due td { font-size: 20px; font-weight: bold; color: #d9534f; }
+    .payment-table .paid td { color: #5cb85c; }
+    .cta-button { display: block; width: 200px; margin: 30px auto; padding: 15px 20px; background-color: #007bff; color: #ffffff; text-align: center; text-decoration: none; border-radius: 8px; font-size: 16px; font-weight: bold; }
+    .footer { text-align: center; padding: 20px; font-size: 12px; color: #888888; background-color: #f8f9fa; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header"><h1>${updatedBooking.waterparkName}</h1></div>
+    <div class="content">
+      <h2>Your Booking is Confirmed!</h2>
+      <p>Hello ${updatedBooking.name}, thank you for your booking! We are excited to welcome you for a day of fun and splashes. Please find your booking details below.</p>
+      <table class="details-table">
+        <tr><td>Booking ID:</td><td style="font-family: monospace;">${updatedBooking.customBookingId}</td></tr>
+        <tr><td>Visit Date:</td><td>${new Date(updatedBooking.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</td></tr>
+        <tr><td>Guests:</td><td>${updatedBooking.adults} Adult(s), ${updatedBooking.children} Child(ren)</td></tr>
+        <tr><td>Phone:</td><td>${updatedBooking.phone}</td></tr>
+      </table>
+      <h2 style="margin-top: 30px;">Payment Summary</h2>
+      <table class="payment-table">
+        <tr><td>Total Amount:</td><td>₹${updatedBooking.totalAmount.toFixed(2)}</td></tr>
+        <tr class="paid"><td>Advance Paid:</td><td>₹${updatedBooking.advanceAmount.toFixed(2)}</td></tr>
+        <tr class="total-due"><td>Amount Due at Park:</td><td>₹${updatedBooking.leftamount.toFixed(2)}</td></tr>
+      </table>
+      <a href="https://waterpark-frontend.vercel.app/booking/${updatedBooking.customBookingId}" class="cta-button" style="color: #ffffff;">View Your Ticket</a>
+      <p style="text-align: center; color: #555;">Please show the ticket at the ticket counter upon your arrival.</p>
+    </div>
+    <div class="footer">
+      <p>This is an automated email. Please do not reply.</p>
+      <p>&copy; ${new Date().getFullYear()} ${updatedBooking.waterparkName}. All rights reserved.</p>
+    </div>
+  </div>
+</body>
+</html>`
+              ).catch(err => console.error('[phonePeCallback] Email error:', err.message))
+            ];
+
+            await Promise.allSettled(notificationPromises);
+            console.log('[phonePeCallback] ✅ All notifications completed');
+          } catch (err) {
+            console.error('[phonePeCallback] Notification batch error:', err);
+          }
+        })();
+
+        return res.json({
+          success: true,
+          message: 'Payment completed successfully',
+          orderId: orderId,
+          merchantOrderId: merchantOrderId,
+          bookingId: updatedBooking.customBookingId,
+          status: 'COMPLETED'
+        });
+      } else if (response.data && response.data.state === 'FAILED') {
+        console.log(`[phonePeCallback] Payment failed for booking: ${booking.customBookingId}`);
+        return res.json({
+          success: false,
+          message: 'Payment failed',
+          orderId: orderId,
+          merchantOrderId: merchantOrderId,
+          status: 'FAILED',
+          errorCode: response.data.errorCode,
+          detailedErrorCode: response.data.detailedErrorCode
+        });
+      } else {
+        console.log(`[phonePeCallback] Payment pending for booking: ${booking.customBookingId}`);
+        return res.json({
+          success: true,
+          message: 'Payment is pending',
+          orderId: orderId,
+          merchantOrderId: merchantOrderId,
+          status: 'PENDING'
+        });
+      }
+    } catch (verificationError) {
+      console.error('[phonePeCallback] PhonePe verification error:', verificationError);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to verify payment with PhonePe'
+      });
+    }
+  } catch (error) {
+    console.error('[phonePeCallback] Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to process callback'
+    });
+  }
+};
 
 // ----------------------------
 // Get Single Booking (Any status - for verification)
