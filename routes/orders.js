@@ -1,191 +1,80 @@
-// File: admin/backend/routes/orders.js
+// File: admin/backend/routes/orders.js (Now using Booking model)
 const express = require("express");
-const Order = require("../models/Order");
+const Booking = require("../models/Booking");
 const router = express.Router();
 const fs = require('fs');
 const path = require('path');
-const { createOrder, getOrdersByEmail, getOrderById, sendOrderStatusUpdateEmail } = require('../controllers/orderController');
+const { createOrder, getOrdersByEmail, getOrderById } = require('../controllers/orderController');
 const { authenticateToken, isAdmin } = require('../middleware/auth');
 
-const ordersFilePath = path.join(__dirname, '../data/orders.json');
+const bookingsFilePath = path.join(__dirname, '../data/bookings.json');
 
-// Helper function to read orders from JSON file
-const readOrders = () => {
+// Helper function to read bookings from JSON file
+const readBookings = () => {
   try {
-    if (fs.existsSync(ordersFilePath)) {
-      const data = fs.readFileSync(ordersFilePath, 'utf8');
+    if (fs.existsSync(bookingsFilePath)) {
+      const data = fs.readFileSync(bookingsFilePath, 'utf8');
       return JSON.parse(data);
     }
     return [];
   } catch (error) {
-    console.error('Error reading orders file:', error);
+    console.error('Error reading bookings file:', error);
     return [];
   }
 };
 
-// Helper function to write orders to JSON file
-const writeOrders = (orders) => {
+// Helper function to write bookings to JSON file
+const writeBookings = (bookings) => {
   try {
-    const dirPath = path.dirname(ordersFilePath);
+    const dirPath = path.dirname(bookingsFilePath);
     if (!fs.existsSync(dirPath)) {
       fs.mkdirSync(dirPath, { recursive: true });
     }
-    fs.writeFileSync(ordersFilePath, JSON.stringify(orders, null, 2));
+    fs.writeFileSync(bookingsFilePath, JSON.stringify(bookings, null, 2));
   } catch (error) {
-    console.error('Error writing orders file:', error);
-    throw new Error('Failed to save order to JSON file');
+    console.error('Error writing bookings file:', error);
+    throw new Error('Failed to save booking to JSON file');
   }
 };
 
-// Admin: Get all orders from MongoDB (not orders.json) - PROTECTED
+// Admin: Get all bookings from MongoDB (not bookings.json) - PROTECTED
 router.get('/json', authenticateToken, isAdmin, async (req, res) => {
   try {
-    const orders = await Order.find().sort({ createdAt: -1 });
-    res.json({ success: true, orders });
+    const bookings = await Booking.find().sort({ bookingDate: -1 });
+    res.json({ success: true, bookings });
   } catch (error) {
-    res.status(500).json({ success: false, message: 'Failed to fetch orders from MongoDB', error: error.message });
+    res.status(500).json({ success: false, message: 'Failed to fetch bookings from MongoDB', error: error.message });
   }
 });
 
-// Create order
+// Create booking (legacy route for backwards compatibility)
 router.post("/", createOrder);
 
-// Update order status - PROTECTED
-router.put("/:id/status", authenticateToken, isAdmin, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { orderStatus } = req.body;
-
-    // Validate status
-    if (!['processing', 'confirmed', 'manufacturing', 'shipped', 'delivered'].includes(orderStatus)) {
-      return res.status(400).json({ success: false, message: 'Invalid order status' });
-    }
-
-    // Update in MongoDB
-    const updatedOrder = await Order.findByIdAndUpdate(
-      id,
-      { orderStatus },
-      { new: true, runValidators: true }
-    );
-
-    if (!updatedOrder) {
-      return res.status(404).json({ success: false, message: 'Order not found' });
-    }
-
-    // Update in JSON file
-    const orders = readOrders();
-    const orderIndex = orders.findIndex(order => order._id.toString() === id);
-    if (orderIndex !== -1) {
-      orders[orderIndex] = updatedOrder.toObject({ virtuals: true });
-      writeOrders(orders);
-    }
-
-    // Send status update email (non-blocking)
-    sendOrderStatusUpdateEmail(updatedOrder).catch(err => console.error('Order status update email error:', err));
-
-    res.json({ success: true, order: updatedOrder });
-  } catch (error) {
-    console.error('Error updating order status:', error);
-    if (error.name === 'ValidationError') {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid order status',
-        errors: Object.values(error.errors).map(err => err.message)
-      });
-    }
-    res.status(500).json({ 
-      success: false,
-      message: 'Failed to update order status',
-      error: error.message 
-    });
-  }
-});
-
-// General order update endpoint - PROTECTED
-router.put("/:id", authenticateToken, isAdmin, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const updateData = req.body;
-
-    // Validate orderStatus if provided
-    if (updateData.orderStatus && !['processing', 'confirmed', 'manufacturing', 'shipped', 'delivered'].includes(updateData.orderStatus)) {
-      return res.status(400).json({ success: false, message: 'Invalid order status' });
-    }
-
-    // Validate paymentStatus if provided
-    if (updateData.paymentStatus && !['pending', 'completed', 'failed'].includes(updateData.paymentStatus)) {
-      return res.status(400).json({ success: false, message: 'Invalid payment status' });
-    }
-
-    // Update in MongoDB
-    const updatedOrder = await Order.findByIdAndUpdate(
-      id,
-      updateData,
-      { new: true, runValidators: true }
-    );
-
-    if (!updatedOrder) {
-      return res.status(404).json({ success: false, message: 'Order not found' });
-    }
-
-    // Update in JSON file
-    const orders = readOrders();
-    const orderIndex = orders.findIndex(order => order._id.toString() === id);
-    if (orderIndex !== -1) {
-      orders[orderIndex] = updatedOrder.toObject({ virtuals: true });
-      writeOrders(orders);
-    }
-
-    res.json({ success: true, order: updatedOrder });
-  } catch (error) {
-    console.error('Error updating order:', error);
-    if (error.name === 'ValidationError') {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid order data',
-        errors: Object.values(error.errors).map(err => err.message)
-      });
-    }
-    res.status(500).json({ 
-      success: false,
-      message: 'Failed to update order',
-      error: error.message 
-    });
-  }
-});
-
-// Route to get all orders for a user by email
+// Route to get all bookings for a user by email
 // GET /api/orders?email=user@example.com
 router.get('/', getOrdersByEmail);
 
-// Route to get payment status for both orders and bookings by ID
+// Route to get booking status by ID
 // GET /api/orders/status/:id (MUST come before /:id to avoid route conflict)
 router.get('/status/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const Booking = require('../models/Booking');
     
-    // Try to find in Booking first
+    // Find booking by custom booking ID
     let booking = await Booking.findOne({ customBookingId: id });
     if (booking) {
       return res.status(200).json({ success: true, booking });
     }
     
-    // Try to find in Order
-    let order = await Order.findById(id);
-    if (order) {
-      return res.status(200).json({ success: true, order });
-    }
-    
-    // Not found in either
-    return res.status(404).json({ success: false, message: 'Not found' });
+    // Not found
+    return res.status(404).json({ success: false, message: 'Booking not found' });
   } catch (error) {
     console.error('[Orders Status] Error:', error);
     return res.status(500).json({ success: false, message: 'Internal server error' });
   }
 });
 
-// Route to get a single order by its ID
+// Route to get a single booking by its ID
 // GET /api/orders/:id
 router.get('/:id', getOrderById);
 

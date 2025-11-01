@@ -1,7 +1,8 @@
 const axios = require('axios');
 const crypto = require('crypto');
 require('dotenv').config();
-const Booking = require('../models/Booking');
+const Order = require('../models/Order');
+const { sendOrderConfirmationEmail } = require('./orderController');
 
 // Cache for OAuth token
 let oauthToken = null;
@@ -316,23 +317,19 @@ exports.phonePeCallback = async (req, res) => {
         }
       );
       console.log('PhonePe verification response:', response.data);
-      
       if (response.data && response.data.state === 'COMPLETED') {
         console.log(`Payment completed for transaction: ${merchantOrderId}`);
-        
-        // Update booking in DB and send confirmation
-        const booking = await Booking.findOneAndUpdate(
-          { phonepeOrderId: orderId },
-          { paymentStatus: 'Completed' },
+        // Update order in DB and send confirmation email
+        const order = await Order.findOneAndUpdate(
+          { transactionId: orderId },
+          { paymentStatus: 'completed' },
           { new: true }
         );
-        
-        if (booking) {
-          console.log(`Booking ${booking.customBookingId} updated to Completed`);
+        if (order) {
+          await sendOrderConfirmationEmail(order);
         } else {
-          console.warn('Booking not found for transactionId:', orderId);
+          console.warn('Order not found for transactionId:', orderId);
         }
-        
         return res.json({
           success: true,
           message: 'Payment completed successfully',
@@ -342,14 +339,6 @@ exports.phonePeCallback = async (req, res) => {
         });
       } else if (response.data && response.data.state === 'FAILED') {
         console.log(`Payment failed for transaction: ${merchantOrderId}`);
-        
-        // Update booking status to Failed
-        const booking = await Booking.findOneAndUpdate(
-          { phonepeOrderId: orderId },
-          { paymentStatus: 'Failed' },
-          { new: true }
-        );
-        
         return res.json({
           success: false,
           message: 'Payment failed',
@@ -395,17 +384,14 @@ exports.getPhonePeStatus = async (req, res) => {
         message: 'PhonePe orderId (transaction ID) is required'
       });
     }
-    
     const env = process.env.PHONEPE_ENV || 'sandbox';
     const accessToken = await getPhonePeToken();
     const baseUrl = env === 'production' 
       ? 'https://api.phonepe.com/apis/pg'
       : 'https://api-preprod.phonepe.com/apis/pg-sandbox';
     const apiEndpoint = `/checkout/v2/order/${orderId}/status`;
-    
     console.log(`Checking PhonePe status for orderId: ${orderId}`);
     console.log(`API URL: ${baseUrl}${apiEndpoint}`);
-    
     const response = await axios.get(
       baseUrl + apiEndpoint,
       {
@@ -416,16 +402,16 @@ exports.getPhonePeStatus = async (req, res) => {
         timeout: 30000
       }
     );
-    
     console.log('PhonePe status response:', response.data);
-    
     // Only COMPLETED is considered success; all others are not
     // Try to extract merchantOrderId from metaInfo if available
     let merchantOrderId = null;
     if (response.data && response.data.metaInfo && response.data.metaInfo.merchantOrderId) {
       merchantOrderId = response.data.metaInfo.merchantOrderId;
+    } else if (response.data && response.data.orderId) {
+      // Optionally, look up merchantOrderId from your DB if you store the mapping
+      // merchantOrderId = await lookupMerchantOrderId(response.data.orderId);
     }
-    
     if (response.data && response.data.state) {
       return res.json({
         success: response.data.state === 'COMPLETED',
@@ -457,7 +443,6 @@ exports.getPhonePeStatus = async (req, res) => {
   } catch (error) {
     const phonePeError = error.response?.data;
     console.error('PhonePe status check error:', phonePeError || error.message);
-    
     if (phonePeError && typeof phonePeError === 'object') {
       return res.status(error.response.status || 500).json({
         success: false,
@@ -466,7 +451,6 @@ exports.getPhonePeStatus = async (req, res) => {
         data: phonePeError.data || null
       });
     }
-    
     if (error.response?.status === 404) {
       return res.status(404).json({
         success: false,
@@ -483,7 +467,6 @@ exports.getPhonePeStatus = async (req, res) => {
         message: 'Request timeout'
       });
     }
-    
     return res.status(500).json({
       success: false,
       message: error.message || 'Failed to check transaction status'
