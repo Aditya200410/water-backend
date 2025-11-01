@@ -1142,19 +1142,53 @@ exports.phonePeRedirect = async (req, res) => {
       
       const phonepeOrderId = orderId || booking.phonepeOrderId;
       if (phonepeOrderId) {
-        const apiEndpoint = `/checkout/v2/order/${phonepeOrderId}/status`;
-        console.log(`[phonePeRedirect] Checking PhonePe status for orderId: ${phonepeOrderId}`);
+        // Sanitize orderId (handle colons) and URL encode
+        let sanitizedOrderId = String(phonepeOrderId).split(':')[0].split(';')[0].trim();
+        const encodedOrderId = encodeURIComponent(sanitizedOrderId);
+        const apiEndpoint = `/checkout/v2/order/${encodedOrderId}/status`;
         
-        const statusResponse = await axios.get(
-          baseUrl + apiEndpoint,
-          {
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `O-Bearer ${accessToken}`
-            },
-            timeout: 30000
+        console.log(`[phonePeRedirect] Checking PhonePe status for orderId: ${phonepeOrderId}`);
+        console.log(`[phonePeRedirect] Sanitized orderId: ${sanitizedOrderId}`);
+        console.log(`[phonePeRedirect] Encoded orderId: ${encodedOrderId}`);
+        
+        let statusResponse;
+        try {
+          statusResponse = await axios.get(
+            baseUrl + apiEndpoint,
+            {
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `O-Bearer ${accessToken}`
+              },
+              timeout: 30000
+            }
+          );
+        } catch (apiError) {
+          // If sanitized fails, try with original orderId (if different)
+          if (sanitizedOrderId !== phonepeOrderId && apiError.response?.status === 400) {
+            console.log(`[phonePeRedirect] API call failed with sanitized orderId, trying with original: ${phonepeOrderId}`);
+            const originalEncoded = encodeURIComponent(String(phonepeOrderId));
+            const originalEndpoint = `/checkout/v2/order/${originalEncoded}/status`;
+            try {
+              statusResponse = await axios.get(
+                baseUrl + originalEndpoint,
+                {
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `O-Bearer ${accessToken}`
+                  },
+                  timeout: 30000
+                }
+              );
+              sanitizedOrderId = String(phonepeOrderId); // Use original if it worked
+              console.log(`[phonePeRedirect] ✅ Successfully used original orderId: ${phonepeOrderId}`);
+            } catch (originalError) {
+              throw apiError; // Throw original error if both fail
+            }
+          } else {
+            throw apiError;
           }
-        );
+        }
 
         console.log('[phonePeRedirect] PhonePe verification response:', statusResponse.data);
         console.log('[phonePeRedirect] Payment state:', statusResponse.data?.state);
@@ -1339,9 +1373,15 @@ exports.phonePeRedirect = async (req, res) => {
             ? 'https://api.phonepe.com/apis/pg'
             : 'https://api-preprod.phonepe.com/apis/pg-sandbox';
           
-          const apiEndpoint = `/checkout/v2/order/${booking.phonepeOrderId}/status`;
+          // Sanitize orderId (handle colons)
+          let retryOrderId = String(booking.phonepeOrderId).split(':')[0].split(';')[0].trim();
+          const retryEncoded = encodeURIComponent(retryOrderId);
+          const retryEndpoint = `${baseUrl}/checkout/v2/order/${retryEncoded}/status`;
+          
+          console.log('[phonePeRedirect] Retry check - sanitized orderId:', retryOrderId);
+          
           const retryResponse = await axios.get(
-            baseUrl + apiEndpoint,
+            retryEndpoint,
             {
               headers: {
                 'Content-Type': 'application/json',
@@ -1419,8 +1459,15 @@ exports.phonePeRedirect = async (req, res) => {
           ? 'https://api.phonepe.com/apis/pg'
           : 'https://api-preprod.phonepe.com/apis/pg-sandbox';
         
+        // Sanitize orderId (handle colons)
+        let finalCheckOrderId = String(booking.phonepeOrderId).split(':')[0].split(';')[0].trim();
+        const finalCheckEncoded = encodeURIComponent(finalCheckOrderId);
+        const finalCheckEndpoint = `${baseUrl}/checkout/v2/order/${finalCheckEncoded}/status`;
+        
+        console.log('[phonePeRedirect] Final check - sanitized orderId:', finalCheckOrderId);
+        
         const finalCheckResponse = await axios.get(
-          `${baseUrl}/checkout/v2/order/${booking.phonepeOrderId}/status`,
+          finalCheckEndpoint,
           {
             headers: {
               'Content-Type': 'application/json',
@@ -1479,17 +1526,70 @@ exports.phonePeRedirect = async (req, res) => {
     });
     console.log('[phonePeRedirect] PhonePe payment state from API:', phonepePaymentState);
     
-    if (booking.paymentStatus === "Completed" || phonepePaymentState === 'COMPLETED') {
-      // Payment successful - redirect to ticket page
-      const ticketUrl = `${frontendUrl}/ticket?bookingId=${booking.customBookingId}`;
-      console.log('[phonePeRedirect] ✅ Payment completed - Redirecting to ticket page:', ticketUrl);
-      return res.redirect(ticketUrl);
-    } else if (phonepePaymentState === 'FAILED') {
+    // Check payment status - prioritize PhonePe API response, then booking database status
+    const isPaymentCompleted = booking.paymentStatus === "Completed" || phonepePaymentState === 'COMPLETED';
+    const isPaymentFailed = phonepePaymentState === 'FAILED';
+    
+    if (isPaymentCompleted) {
+      // Payment successful - redirect to payment status page with success, which will then redirect to ticket
+      const successUrl = `${frontendUrl}/payment/status?bookingId=${booking.customBookingId}&status=success`;
+      console.log('[phonePeRedirect] ✅ Payment completed - Redirecting to payment status page with success:', successUrl);
+      return res.redirect(successUrl);
+    } else if (isPaymentFailed) {
       // Payment failed - redirect to payment failure page
       const failureUrl = `${frontendUrl}/payment/status?bookingId=${booking.customBookingId}&status=failed`;
       console.log('[phonePeRedirect] ❌ Payment failed - Redirecting to failure page:', failureUrl);
       return res.redirect(failureUrl);
     } else {
+      // Payment pending or unknown - check PhonePe API one more time if we have orderId
+      // If phonepePaymentState is null, it might mean the API check failed or wasn't performed
+      if (!phonepePaymentState && booking.phonepeOrderId) {
+        console.log('[phonePeRedirect] phonepePaymentState is null, re-checking PhonePe status...');
+        try {
+          const accessToken = await getPhonePeToken();
+          const env = process.env.PHONEPE_ENV || 'sandbox';
+          const baseUrl = env === 'production' 
+            ? 'https://api.phonepe.com/apis/pg'
+            : 'https://api-preprod.phonepe.com/apis/pg-sandbox';
+          
+          // Sanitize orderId (handle colons)
+          let phonepeOrderId = String(booking.phonepeOrderId).split(':')[0].split(';')[0].trim();
+          const apiEndpoint = `/checkout/v2/order/${encodeURIComponent(phonepeOrderId)}/status`;
+          
+          const statusResponse = await axios.get(
+            baseUrl + apiEndpoint,
+            {
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `O-Bearer ${accessToken}`
+              },
+              timeout: 30000
+            }
+          );
+          
+          const recheckState = statusResponse.data?.state;
+          console.log('[phonePeRedirect] Re-check PhonePe status result:', recheckState);
+          
+          if (recheckState === 'COMPLETED') {
+            // Update booking and redirect to success
+            await Booking.findOneAndUpdate(
+              { _id: booking._id, paymentStatus: { $ne: "Completed" } },
+              { $set: { paymentStatus: "Completed", paymentId: phonepeOrderId } },
+              { new: true }
+            );
+            const successUrl = `${frontendUrl}/payment/status?bookingId=${booking.customBookingId}&status=success`;
+            console.log('[phonePeRedirect] ✅ Payment completed (re-check) - Redirecting to success:', successUrl);
+            return res.redirect(successUrl);
+          } else if (recheckState === 'FAILED') {
+            const failureUrl = `${frontendUrl}/payment/status?bookingId=${booking.customBookingId}&status=failed`;
+            console.log('[phonePeRedirect] ❌ Payment failed (re-check) - Redirecting to failure:', failureUrl);
+            return res.redirect(failureUrl);
+          }
+        } catch (recheckError) {
+          console.error('[phonePeRedirect] Re-check PhonePe status failed:', recheckError.message);
+        }
+      }
+      
       // Payment pending or unknown - redirect to payment status page with pending
       const pendingUrl = `${frontendUrl}/payment/status?bookingId=${booking.customBookingId}&status=pending`;
       console.log('[phonePeRedirect] ⏳ Payment pending - Redirecting to payment status page:', pendingUrl);
