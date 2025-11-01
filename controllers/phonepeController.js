@@ -447,35 +447,100 @@ exports.getPhonePeStatus = async (req, res) => {
       });
     }
     
-    // Sanitize orderId - remove any invalid characters like colons, semicolons, etc.
-    // PhonePe orderIds should not contain these characters (e.g., "OMO2511012306208273028508W:1" -> "OMO2511012306208273028508W")
-    orderId = String(orderId).split(':')[0].split(';')[0].trim();
+    // Store original orderId for logging and potential fallback
+    const originalOrderId = String(orderId).trim();
     
-    if (!orderId || orderId.length === 0) {
+    // PhonePe orderIds can contain colons (e.g., "OMO2511012306208273028508W:1")
+    // Try with the original orderId first, then sanitize if needed
+    let sanitizedOrderId = String(orderId).split(':')[0].split(';')[0].trim();
+    
+    console.log(`[getPhonePeStatus] Original orderId: ${originalOrderId}`);
+    console.log(`[getPhonePeStatus] Sanitized orderId: ${sanitizedOrderId}`);
+    
+    if (!originalOrderId || originalOrderId.length === 0) {
+      console.error('[getPhonePeStatus] Invalid orderId:', originalOrderId);
       return res.status(400).json({
         success: false,
-        message: 'Invalid PhonePe orderId format'
+        message: 'Invalid PhonePe orderId format',
+        originalOrderId: originalOrderId
       });
     }
     
     const env = process.env.PHONEPE_ENV || 'sandbox';
-    const accessToken = await getPhonePeToken();
+    let accessToken;
+    try {
+      accessToken = await getPhonePeToken();
+    } catch (tokenError) {
+      console.error('[getPhonePeStatus] Failed to get PhonePe token:', tokenError);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to authenticate with PhonePe',
+        error: tokenError.message
+      });
+    }
+    
     const baseUrl = env === 'production' 
       ? 'https://api.phonepe.com/apis/pg'
       : 'https://api-preprod.phonepe.com/apis/pg-sandbox';
-    const apiEndpoint = `/checkout/v2/order/${orderId}/status`;
-    console.log(`Checking PhonePe status for orderId: ${orderId}`);
-    console.log(`API URL: ${baseUrl}${apiEndpoint}`);
-    const response = await axios.get(
-      baseUrl + apiEndpoint,
-      {
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `O-Bearer ${accessToken}`
-        },
-        timeout: 30000
+    
+    // Try with original orderId first (PhonePe may expect the full orderId with colon)
+    // URL encode the orderId to handle special characters safely in URL path
+    let orderIdToUse = originalOrderId;
+    let encodedOrderId = encodeURIComponent(originalOrderId);
+    let apiEndpoint = `/checkout/v2/order/${encodedOrderId}/status`;
+    let fullUrl = `${baseUrl}${apiEndpoint}`;
+    
+    console.log(`[getPhonePeStatus] Attempting PhonePe API call with original orderId: ${originalOrderId}`);
+    console.log(`[getPhonePeStatus] Encoded orderId: ${encodedOrderId}`);
+    console.log(`[getPhonePeStatus] API URL: ${fullUrl}`);
+    
+    let response;
+    try {
+      response = await axios.get(
+        fullUrl,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `O-Bearer ${accessToken}`
+          },
+          timeout: 30000
+        }
+      );
+      console.log(`[getPhonePeStatus] ✅ API call succeeded with original orderId`);
+    } catch (apiError) {
+      // If API call fails with original orderId, try with sanitized orderId
+      if (sanitizedOrderId !== originalOrderId && apiError.response?.status === 400) {
+        console.log(`[getPhonePeStatus] API call failed with original orderId (status: ${apiError.response?.status}), trying with sanitized: ${sanitizedOrderId}`);
+        
+        const encodedSanitizedOrderId = encodeURIComponent(sanitizedOrderId);
+        const sanitizedApiEndpoint = `/checkout/v2/order/${encodedSanitizedOrderId}/status`;
+        const sanitizedFullUrl = `${baseUrl}${sanitizedApiEndpoint}`;
+        
+        try {
+          response = await axios.get(
+            sanitizedFullUrl,
+            {
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `O-Bearer ${accessToken}`
+              },
+              timeout: 30000
+            }
+          );
+          // If sanitized works, use it
+          orderIdToUse = sanitizedOrderId;
+          console.log(`[getPhonePeStatus] ✅ Successfully used sanitized orderId: ${sanitizedOrderId}`);
+        } catch (sanitizedError) {
+          // If both fail, log and throw the original error with better message
+          console.error(`[getPhonePeStatus] Both original and sanitized orderIds failed`);
+          console.error(`[getPhonePeStatus] Original error:`, apiError.response?.data || apiError.message);
+          console.error(`[getPhonePeStatus] Sanitized error:`, sanitizedError.response?.data || sanitizedError.message);
+          throw apiError;
+        }
+      } else {
+        throw apiError;
       }
-    );
+    }
     console.log('PhonePe status response:', response.data);
     
     // Try to extract merchantOrderId from metaInfo if available
@@ -485,9 +550,23 @@ exports.getPhonePeStatus = async (req, res) => {
     }
     
     // Find booking by orderId or merchantOrderId
+    // Try to find booking with both the orderId that worked and the original/sanitized versions
     let booking = null;
-    if (orderId) {
-      booking = await Booking.findOne({ phonepeOrderId: orderId });
+    if (orderIdToUse) {
+      // Try with the orderId that worked for API call
+      booking = await Booking.findOne({ phonepeOrderId: orderIdToUse });
+      
+      // If not found and we used sanitized, try with original
+      if (!booking && orderIdToUse === sanitizedOrderId && originalOrderId !== sanitizedOrderId) {
+        booking = await Booking.findOne({ phonepeOrderId: originalOrderId });
+        console.log(`[getPhonePeStatus] Tried original orderId for booking lookup: ${originalOrderId}`);
+      }
+      
+      // If not found and we used original, try with sanitized
+      if (!booking && orderIdToUse === originalOrderId && sanitizedOrderId !== originalOrderId) {
+        booking = await Booking.findOne({ phonepeOrderId: sanitizedOrderId });
+        console.log(`[getPhonePeStatus] Tried sanitized orderId for booking lookup: ${sanitizedOrderId}`);
+      }
     }
     if (!booking && merchantOrderId) {
       booking = await Booking.findOne({ phonepeMerchantOrderId: merchantOrderId });
@@ -507,7 +586,7 @@ exports.getPhonePeStatus = async (req, res) => {
               {
                 $set: {
                   paymentStatus: "Completed",
-                  paymentId: orderId
+                  paymentId: orderIdToUse
                 }
               },
               { new: true }
@@ -557,34 +636,63 @@ exports.getPhonePeStatus = async (req, res) => {
     }
   } catch (error) {
     const phonePeError = error.response?.data;
-    console.error('PhonePe status check error:', phonePeError || error.message);
-    if (phonePeError && typeof phonePeError === 'object') {
-      return res.status(error.response.status || 500).json({
+    const statusCode = error.response?.status;
+    console.error('[getPhonePeStatus] PhonePe API error:', {
+      status: statusCode,
+      data: phonePeError,
+      message: error.message,
+      orderId: orderId,
+      url: error.config?.url
+    });
+    
+    // Handle specific error responses from PhonePe
+    if (statusCode === 400) {
+      return res.status(400).json({
         success: false,
-        message: phonePeError.message || 'PhonePe error',
-        code: phonePeError.code,
-        data: phonePeError.data || null
+        message: phonePeError?.message || 'Invalid request to PhonePe API',
+        code: phonePeError?.code,
+        phonePeMessage: phonePeError?.message,
+        orderId: orderId
       });
     }
-    if (error.response?.status === 404) {
+    
+    if (phonePeError && typeof phonePeError === 'object') {
+      return res.status(statusCode || 500).json({
+        success: false,
+        message: phonePeError.message || 'PhonePe API error',
+        code: phonePeError.code,
+        data: phonePeError.data || null,
+        orderId: orderId
+      });
+    }
+    
+    if (statusCode === 404) {
       return res.status(404).json({
         success: false,
-        message: 'Order not found'
+        message: 'Order not found in PhonePe system',
+        orderId: orderId
       });
-    } else if (error.response?.status === 401) {
+    } else if (statusCode === 401) {
       return res.status(401).json({
         success: false,
-        message: 'Authentication failed'
+        message: 'Authentication failed with PhonePe'
       });
     } else if (error.code === 'ECONNABORTED') {
       return res.status(408).json({
         success: false,
-        message: 'Request timeout'
+        message: 'Request timeout - PhonePe API did not respond in time'
+      });
+    } else if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
+      return res.status(503).json({
+        success: false,
+        message: 'PhonePe API is not reachable'
       });
     }
-    return res.status(500).json({
+    
+    return res.status(statusCode || 500).json({
       success: false,
-      message: error.message || 'Failed to check transaction status'
+      message: error.message || 'Failed to check transaction status',
+      orderId: orderId
     });
   }
 };
