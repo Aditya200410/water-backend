@@ -336,6 +336,7 @@ console.log("[createBooking] Generating custom booking ID for:", waterparkName);
       const accessToken = await getPhonePeToken();
       const env = process.env.PHONEPE_ENV || 'sandbox';
       const frontendUrl = process.env.FRONTEND_URL || 'https://www.waterparkchalo.com';
+      const backendUrl = process.env.BACKEND_URL || 'https://water-backend.vercel.app';
       
       // Set base URL for payment API based on PhonePe documentation
       const baseUrl = env === 'production' 
@@ -363,7 +364,7 @@ console.log("[createBooking] Generating custom booking ID for:", waterparkName);
           type: 'PG_CHECKOUT',
           message: `Booking payment for ${waterparkName}`,
           merchantUrls: {
-            redirectUrl: `${frontendUrl.replace(/\/+$/, '')}/payment/status?bookingId=${booking.customBookingId}&merchantOrderId=${merchantOrderId}`
+            redirectUrl: `${backendUrl.replace(/\/+$/, '')}/api/bookings/phonepe/redirect?bookingId=${booking.customBookingId}&merchantOrderId=${merchantOrderId}`
           }
         }
       };
@@ -1037,6 +1038,197 @@ exports.phonePeCallback = async (req, res) => {
       success: false,
       message: 'Failed to process callback'
     });
+  }
+};
+
+// ----------------------------
+// PhonePe Redirect Handler (checks status and redirects to ticket)
+// ----------------------------
+exports.phonePeRedirect = async (req, res) => {
+  try {
+    const { bookingId, merchantOrderId, orderId } = req.query;
+    console.log('[phonePeRedirect] PhonePe redirect received:', { bookingId, merchantOrderId, orderId });
+
+    if (!bookingId && !merchantOrderId && !orderId) {
+      return res.status(400).send('Missing booking ID parameters');
+    }
+
+    // Find booking by customBookingId, merchantOrderId, or orderId
+    let booking = null;
+    if (bookingId) {
+      booking = await Booking.findOne({ customBookingId: bookingId });
+    } else if (merchantOrderId) {
+      booking = await Booking.findOne({ phonepeMerchantOrderId: merchantOrderId });
+    } else if (orderId) {
+      booking = await Booking.findOne({ phonepeOrderId: orderId });
+    }
+
+    if (!booking) {
+      console.warn('[phonePeRedirect] Booking not found:', { bookingId, merchantOrderId, orderId });
+      // Redirect to error page or ticket page with error message
+      const frontendUrl = process.env.FRONTEND_URL || 'https://www.waterparkchalo.com';
+      return res.redirect(`${frontendUrl}/ticket?bookingId=${bookingId || ''}&error=notfound`);
+    }
+
+    // Check payment status with PhonePe API
+    try {
+      const accessToken = await getPhonePeToken();
+      const env = process.env.PHONEPE_ENV || 'sandbox';
+      const baseUrl = env === 'production' 
+        ? 'https://api.phonepe.com/apis/pg'
+        : 'https://api-preprod.phonepe.com/apis/pg-sandbox';
+      
+      const phonepeOrderId = orderId || booking.phonepeOrderId;
+      if (phonepeOrderId) {
+        const apiEndpoint = `/checkout/v2/order/${phonepeOrderId}/status`;
+        console.log(`[phonePeRedirect] Checking PhonePe status for orderId: ${phonepeOrderId}`);
+        
+        const statusResponse = await axios.get(
+          baseUrl + apiEndpoint,
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `O-Bearer ${accessToken}`
+            },
+            timeout: 30000
+          }
+        );
+
+        console.log('[phonePeRedirect] PhonePe verification response:', statusResponse.data);
+
+        if (statusResponse.data && statusResponse.data.state === 'COMPLETED') {
+          // Update booking if not already updated
+          if (booking.paymentStatus !== "Completed") {
+            booking.paymentStatus = "Completed";
+            booking.paymentType = "PhonePe";
+            booking.paymentId = phonepeOrderId;
+            await booking.save();
+            console.log('[phonePeRedirect] Booking updated to Completed:', booking.customBookingId);
+
+            // Send notifications in background (non-blocking)
+            (async () => {
+              try {
+                const notificationPromises = [
+                  sendWhatsAppMessage({
+                    id: booking.waterpark.toString(),
+                    waterparkName: booking.waterparkName,
+                    customBookingId: booking.customBookingId,
+                    customerName: booking.name,
+                    customerPhone: booking.phone,
+                    date: booking.date,
+                    adultquantity: booking.adults,
+                    childquantity: booking.children,
+                    totalAmount: booking.totalAmount,
+                    left: booking.leftamount,
+                  }).catch(err => console.error('[phonePeRedirect] Customer WhatsApp error:', err.message)),
+                  
+                  selfWhatsAppMessage({
+                    id: booking.waterpark.toString(),
+                    waterparkName: booking.waterparkName,
+                    customBookingId: booking.customBookingId,
+                    customerName: booking.name,
+                    customerPhone: booking.phone,
+                    date: booking.date,
+                    adultquantity: booking.adults,
+                    childquantity: booking.children,
+                    totalAmount: booking.totalAmount,
+                    left: booking.leftamount,
+                  }).catch(err => console.error('[phonePeRedirect] Self WhatsApp error:', err.message)),
+
+                  parkWhatsAppMessage({
+                    id: booking.waterpark.toString(),
+                    waterparkName: booking.waterparkName,
+                    customBookingId: booking.customBookingId,
+                    customerName: booking.name,
+                    waternumber: booking.waternumber,
+                    customerPhone: booking.phone,
+                    date: booking.date,
+                    adultquantity: booking.adults,
+                    childquantity: booking.children,
+                    totalAmount: booking.totalAmount,
+                    left: booking.leftamount,
+                  }).catch(err => console.error('[phonePeRedirect] Park WhatsApp error:', err.message)),
+
+                  sendEmail(
+                    [booking.email, "am542062@gmail.com"],
+                    `✅ Your Booking is Confirmed for ${booking.waterparkName}!`,
+                    `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Booking Confirmation</title>
+  <style>
+    body { margin: 0; padding: 0; background-color: #f4f4f7; font-family: Arial, sans-serif; }
+    .container { max-width: 600px; margin: 20px auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; border: 1px solid #dee2e6; }
+    .header { background-color: #007bff; color: #ffffff; padding: 30px 20px; text-align: center; }
+    .header h1 { margin: 0; font-size: 28px; font-weight: bold; }
+    .content { padding: 30px; color: #333333; line-height: 1.6; }
+    .content h2 { color: #0056b3; font-size: 22px; margin-top: 0; }
+    .details-table, .payment-table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+    .details-table td, .payment-table td { padding: 12px 0; font-size: 16px; border-bottom: 1px solid #eeeeee; }
+    .details-table td:first-child { color: #555555; }
+    .details-table td:last-child, .payment-table td:last-child { text-align: right; font-weight: bold; }
+    .payment-table .total-due td { font-size: 20px; font-weight: bold; color: #d9534f; }
+    .payment-table .paid td { color: #5cb85c; }
+    .cta-button { display: block; width: 200px; margin: 30px auto; padding: 15px 20px; background-color: #007bff; color: #ffffff; text-align: center; text-decoration: none; border-radius: 8px; font-size: 16px; font-weight: bold; }
+    .footer { text-align: center; padding: 20px; font-size: 12px; color: #888888; background-color: #f8f9fa; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header"><h1>${booking.waterparkName}</h1></div>
+    <div class="content">
+      <h2>Your Booking is Confirmed!</h2>
+      <p>Hello ${booking.name}, thank you for your booking! We are excited to welcome you for a day of fun and splashes. Please find your booking details below.</p>
+      <table class="details-table">
+        <tr><td>Booking ID:</td><td style="font-family: monospace;">${booking.customBookingId}</td></tr>
+        <tr><td>Visit Date:</td><td>${new Date(booking.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</td></tr>
+        <tr><td>Guests:</td><td>${booking.adults} Adult(s), ${booking.children} Child(ren)</td></tr>
+        <tr><td>Phone:</td><td>${booking.phone}</td></tr>
+      </table>
+      <h2 style="margin-top: 30px;">Payment Summary</h2>
+      <table class="payment-table">
+        <tr><td>Total Amount:</td><td>₹${booking.totalAmount.toFixed(2)}</td></tr>
+        <tr class="paid"><td>Advance Paid:</td><td>₹${booking.advanceAmount.toFixed(2)}</td></tr>
+        <tr class="total-due"><td>Amount Due at Park:</td><td>₹${booking.leftamount.toFixed(2)}</td></tr>
+      </table>
+      <a href="https://waterpark-frontend.vercel.app/booking/${booking.customBookingId}" class="cta-button" style="color: #ffffff;">View Your Ticket</a>
+      <p style="text-align: center; color: #555;">Please show the ticket at the ticket counter upon your arrival.</p>
+    </div>
+    <div class="footer">
+      <p>This is an automated email. Please do not reply.</p>
+      <p>&copy; ${new Date().getFullYear()} ${booking.waterparkName}. All rights reserved.</p>
+    </div>
+  </div>
+</body>
+</html>`
+                  ).catch(err => console.error('[phonePeRedirect] Email error:', err.message))
+                ];
+
+                await Promise.allSettled(notificationPromises);
+                console.log('[phonePeRedirect] ✅ All notifications completed');
+              } catch (err) {
+                console.error('[phonePeRedirect] Notification batch error:', err);
+              }
+            })();
+          }
+        }
+      }
+    } catch (verifyError) {
+      console.error('[phonePeRedirect] PhonePe verification error:', verifyError);
+      // Continue anyway - redirect to ticket page, which will handle status checking
+    }
+
+    // Always redirect to ticket page (like Razorpay did)
+    const frontendUrl = process.env.FRONTEND_URL || 'https://www.waterparkchalo.com';
+    const ticketUrl = `${frontendUrl}/ticket?bookingId=${booking.customBookingId}`;
+    console.log('[phonePeRedirect] Redirecting to ticket page:', ticketUrl);
+    return res.redirect(ticketUrl);
+  } catch (error) {
+    console.error('[phonePeRedirect] Error:', error);
+    const frontendUrl = process.env.FRONTEND_URL || 'https://www.waterparkchalo.com';
+    return res.redirect(`${frontendUrl}/ticket?error=redirectfailed`);
   }
 };
 
