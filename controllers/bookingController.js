@@ -526,15 +526,20 @@ exports.verifyPayment = async (req, res) => {
       console.log('[verifyPayment] PhonePe verification response:', statusResponse.data);
 
       if (statusResponse.data && statusResponse.data.state === 'COMPLETED') {
-        // Only COMPLETED is considered success
-        booking.paymentStatus = "Completed";
-        booking.paymentType = "PhonePe";
-        booking.paymentId = phonepeOrderId;
-        await booking.save();
-        console.log(
-          "[verifyPayment] Booking updated with payment success:",
-          booking.customBookingId
-        );
+        // Payment successful - set paymentStatus to "Completed" (same as Razorpay)
+        if (booking.paymentStatus !== "Completed") {
+          booking.paymentStatus = "Completed";
+          booking.paymentType = "PhonePe";
+          booking.paymentId = phonepeOrderId;
+          await booking.save();
+          console.log(
+            "[verifyPayment] ✅ Payment successful - Booking status set to 'Completed' (same as Razorpay):",
+            booking.customBookingId
+          );
+          console.log("[verifyPayment] Verified payment status:", booking.paymentStatus);
+        } else {
+          console.log("[verifyPayment] Booking already has 'Completed' status");
+        }
       } else {
         console.warn('[verifyPayment] Payment not completed yet:', statusResponse.data?.state);
         return res.status(400).json({
@@ -1096,21 +1101,26 @@ exports.phonePeRedirect = async (req, res) => {
 
         console.log('[phonePeRedirect] PhonePe verification response:', statusResponse.data);
 
+        // If payment is COMPLETED, set paymentStatus to "Completed" (same as Razorpay)
         if (statusResponse.data && statusResponse.data.state === 'COMPLETED') {
-          // Update booking if not already updated (saves in Booking model, not orders)
+          // Update booking to "Completed" status if not already updated (same as Razorpay behavior)
           if (booking.paymentStatus !== "Completed") {
             booking.paymentStatus = "Completed";
             booking.paymentType = "PhonePe";
             booking.paymentId = phonepeOrderId;
             await booking.save();
-            console.log('[phonePeRedirect] ✅ Booking saved in Booking model with Completed status:', booking.customBookingId);
+            console.log('[phonePeRedirect] ✅ Payment successful - Booking status set to "Completed" (same as Razorpay):', booking.customBookingId);
             console.log('[phonePeRedirect] Booking details:', {
               _id: booking._id,
               customBookingId: booking.customBookingId,
-              paymentStatus: booking.paymentStatus,
+              paymentStatus: booking.paymentStatus, // Should be "Completed"
               paymentType: booking.paymentType,
               paymentId: booking.paymentId
             });
+            
+            // Reload booking from database to ensure we have the latest status
+            booking = await Booking.findById(booking._id);
+            console.log('[phonePeRedirect] Verified booking status after save:', booking.paymentStatus);
 
             // Send notifications in background (non-blocking)
             (async () => {
@@ -1224,6 +1234,39 @@ exports.phonePeRedirect = async (req, res) => {
       }
     } catch (verifyError) {
       console.error('[phonePeRedirect] PhonePe verification error:', verifyError);
+      // Even if verification fails, check if payment might be completed
+      // Try to verify using the booking's phonepeOrderId one more time
+      try {
+        if (booking.phonepeOrderId) {
+          const accessToken = await getPhonePeToken();
+          const env = process.env.PHONEPE_ENV || 'sandbox';
+          const baseUrl = env === 'production' 
+            ? 'https://api.phonepe.com/apis/pg'
+            : 'https://api-preprod.phonepe.com/apis/pg-sandbox';
+          
+          const apiEndpoint = `/checkout/v2/order/${booking.phonepeOrderId}/status`;
+          const retryResponse = await axios.get(
+            baseUrl + apiEndpoint,
+            {
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `O-Bearer ${accessToken}`
+              },
+              timeout: 10000
+            }
+          );
+          
+          if (retryResponse.data && retryResponse.data.state === 'COMPLETED' && booking.paymentStatus !== "Completed") {
+            booking.paymentStatus = "Completed";
+            booking.paymentType = "PhonePe";
+            booking.paymentId = booking.phonepeOrderId;
+            await booking.save();
+            console.log('[phonePeRedirect] ✅ Payment verified on retry - Status set to "Completed":', booking.customBookingId);
+          }
+        }
+      } catch (retryError) {
+        console.error('[phonePeRedirect] Retry verification also failed:', retryError.message);
+      }
       // Continue anyway - booking exists, redirect to ticket page
       // The ticket page will use "any" status endpoint to fetch the booking regardless of payment status
     }
