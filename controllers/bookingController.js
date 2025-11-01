@@ -530,7 +530,6 @@ exports.verifyPayment = async (req, res) => {
         // Payment successful - set paymentStatus to "Completed" (same as Razorpay)
         if (booking.paymentStatus !== "Completed") {
           booking.paymentStatus = "Completed";
-          booking.paymentType = "PhonePe";
           booking.paymentId = phonepeOrderId;
           await booking.save();
           console.log(
@@ -866,8 +865,7 @@ exports.phonePeCallback = async (req, res) => {
           {
             $set: {
               paymentStatus: "Completed",
-              paymentId: orderId,
-              paymentType: "PhonePe"
+              paymentId: orderId
             }
           },
           { 
@@ -1119,7 +1117,6 @@ exports.phonePeRedirect = async (req, res) => {
             {
               $set: {
                 paymentStatus: "Completed",
-                paymentType: "PhonePe",
                 paymentId: phonepeOrderId
               }
             },
@@ -1141,7 +1138,6 @@ exports.phonePeRedirect = async (req, res) => {
             // Force update if status is still not Completed
             if (booking.paymentStatus !== "Completed") {
               booking.paymentStatus = "Completed";
-              booking.paymentType = "PhonePe";
               booking.paymentId = phonepeOrderId;
               await booking.save();
               console.log('[phonePeRedirect] ✅ Force updated booking status to "Completed"');
@@ -1255,6 +1251,9 @@ exports.phonePeRedirect = async (req, res) => {
                 console.error('[phonePeRedirect] Notification batch error:', err);
               }
             })();
+        } else if (statusResponse.data && statusResponse.data.state === 'FAILED') {
+          console.log('[phonePeRedirect] Payment FAILED for booking:', booking.customBookingId);
+          // Don't update the booking status, just redirect to failure page
         } else {
           console.log('[phonePeRedirect] Payment state is not COMPLETED:', statusResponse.data?.state);
         }
@@ -1297,7 +1296,6 @@ exports.phonePeRedirect = async (req, res) => {
               {
                 $set: {
                   paymentStatus: "Completed",
-                  paymentType: "PhonePe",
                   paymentId: booking.phonepeOrderId
                 }
               },
@@ -1316,7 +1314,6 @@ exports.phonePeRedirect = async (req, res) => {
               booking = await Booking.findById(booking._id);
               if (booking.paymentStatus !== "Completed") {
                 booking.paymentStatus = "Completed";
-                booking.paymentType = "PhonePe";
                 booking.paymentId = booking.phonepeOrderId;
                 await booking.save();
                 console.log('[phonePeRedirect] ✅ Force updated status to "Completed" on retry');
@@ -1337,16 +1334,6 @@ exports.phonePeRedirect = async (req, res) => {
       const frontendUrl = process.env.FRONTEND_URL || 'https://www.waterparkchalo.com';
       return res.redirect(`${frontendUrl}/ticket?error=bookingnotfound`);
     }
-
-    // Final check: Reload booking one more time to ensure we have the latest status
-    booking = await Booking.findById(booking._id);
-    console.log('[phonePeRedirect] Final booking status before redirect:', booking.paymentStatus);
-    console.log('[phonePeRedirect] Final booking details:', {
-      customBookingId: booking.customBookingId,
-      paymentStatus: booking.paymentStatus,
-      paymentType: booking.paymentType,
-      paymentId: booking.paymentId
-    });
 
     // CRITICAL: If payment was successful but status is still not "Completed", force update it
     if (booking.phonepeOrderId && booking.paymentStatus !== "Completed") {
@@ -1378,7 +1365,6 @@ exports.phonePeRedirect = async (req, res) => {
             {
               $set: {
                 paymentStatus: "Completed",
-                paymentType: "PhonePe",
                 paymentId: booking.phonepeOrderId
               }
             },
@@ -1391,7 +1377,6 @@ exports.phonePeRedirect = async (req, res) => {
           } else {
             // Fallback to direct save if findOneAndUpdate didn't work
             booking.paymentStatus = "Completed";
-            booking.paymentType = "PhonePe";
             booking.paymentId = booking.phonepeOrderId;
             await booking.save();
             booking = await Booking.findById(booking._id);
@@ -1403,14 +1388,30 @@ exports.phonePeRedirect = async (req, res) => {
       }
     }
 
-    // Always redirect to ticket page (like Razorpay did)
-    // Booking is saved in Booking model, ticket page will fetch it using /api/bookings/any/:id
+    // Redirect based on payment status
     const frontendUrl = process.env.FRONTEND_URL || 'https://www.waterparkchalo.com';
-    const ticketUrl = `${frontendUrl}/ticket?bookingId=${booking.customBookingId}`;
-    console.log('[phonePeRedirect] ✅ Redirecting to ticket page:', ticketUrl);
-    console.log('[phonePeRedirect] Booking status at redirect time:', booking.paymentStatus);
-    console.log('[phonePeRedirect] Booking will be fetched from Booking model (not orders)');
-    return res.redirect(ticketUrl);
+    
+    // Final reload of booking to ensure we have latest status
+    booking = await Booking.findById(booking._id);
+    console.log('[phonePeRedirect] Final booking status before redirect:', booking.paymentStatus);
+    console.log('[phonePeRedirect] Final booking details:', {
+      customBookingId: booking.customBookingId,
+      paymentStatus: booking.paymentStatus,
+      paymentMethod: booking.paymentMethod,
+      paymentId: booking.paymentId
+    });
+    
+    if (booking.paymentStatus === "Completed") {
+      // Payment successful - redirect to ticket page
+      const ticketUrl = `${frontendUrl}/ticket?bookingId=${booking.customBookingId}`;
+      console.log('[phonePeRedirect] ✅ Payment completed - Redirecting to ticket page:', ticketUrl);
+      return res.redirect(ticketUrl);
+    } else {
+      // Payment failed or pending - redirect to payment failure page
+      const failureUrl = `${frontendUrl}/payment/status?bookingId=${booking.customBookingId}&status=failed`;
+      console.log('[phonePeRedirect] ❌ Payment not completed - Redirecting to failure page:', failureUrl);
+      return res.redirect(failureUrl);
+    }
   } catch (error) {
     console.error('[phonePeRedirect] Error:', error);
     const frontendUrl = process.env.FRONTEND_URL || 'https://www.waterparkchalo.com';
@@ -1943,8 +1944,7 @@ exports.razorpayWebhook = async (req, res) => {
         {
           $set: {
             paymentStatus: "Completed",
-            paymentId: paymentEntity.id,
-            paymentType: "Razorpay"
+            paymentId: paymentEntity.id
           }
         },
         { 
