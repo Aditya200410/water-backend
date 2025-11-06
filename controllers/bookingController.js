@@ -507,11 +507,32 @@ exports.verifyPayment = async (req, res) => {
         booking.paymentStatus = "Completed";
         booking.paymentType = "PhonePe";
         booking.paymentId = orderId;
-        await booking.save();
-        console.log(
-          "[verifyPayment] Booking updated with payment success:",
-          booking.customBookingId
-        );
+        
+        // Save booking with validation
+        try {
+          await booking.save();
+          console.log(
+            "[verifyPayment] Booking updated with payment success:",
+            booking.customBookingId,
+            "Payment Status:",
+            booking.paymentStatus,
+            "Payment Type:",
+            booking.paymentType,
+            "Payment ID:",
+            booking.paymentId
+          );
+          
+          // Verify the save was successful by fetching the booking again
+          const savedBooking = await Booking.findOne({ customBookingId: booking.customBookingId });
+          if (savedBooking && savedBooking.paymentStatus === "Completed") {
+            console.log("[verifyPayment] ✅ Booking successfully saved with paymentStatus: Completed");
+          } else {
+            console.error("[verifyPayment] ⚠️ Warning: Booking save verification failed");
+          }
+        } catch (saveError) {
+          console.error("[verifyPayment] Error saving booking:", saveError);
+          throw new Error("Failed to save booking with payment status");
+        }
 
         // ✅ Use the readable customBookingId for the frontend URL
         const frontendUrl = `https://www.waterparkchalo.com/ticket?bookingId=${booking.customBookingId}`;
@@ -520,205 +541,226 @@ exports.verifyPayment = async (req, res) => {
         // ✅ Send all notifications in parallel for faster response
         console.log("[verifyPayment] Sending notifications in parallel...");
         
-        const notificationPromises = [
-          // WhatsApp messages
-          sendWhatsAppMessage({
-            id: booking.waterpark.toString(),
-            waterparkName: booking.waterparkName,
-            customBookingId: booking.customBookingId,
-            customerName: booking.name,
-            customerPhone: booking.phone,
-            date: booking.date,
-            adultquantity: booking.adults,
-            childquantity: booking.children,
-            totalAmount: booking.totalAmount,
-            left: booking.leftamount,
-          }).catch(err => console.error("[verifyPayment] Customer WhatsApp error:", err.message)),
-          
-          selfWhatsAppMessage({
-            id: booking.waterpark.toString(),
-            waterparkName: booking.waterparkName,
-            customBookingId: booking.customBookingId,
-            customerName: booking.name,
-            customerPhone: booking.phone,
-            date: booking.date,
-            adultquantity: booking.adults,
-            childquantity: booking.children,
-            totalAmount: booking.totalAmount,
-            left: booking.leftamount,
-          }).catch(err => console.error("[verifyPayment] Self WhatsApp error:", err.message)),
+        // Send notifications in background (don't block response)
+        (async () => {
+          try {
+            console.log("[verifyPayment] Starting background notifications for:", booking.customBookingId);
+            
+            const notificationResults = await Promise.allSettled([
+              // Customer WhatsApp
+              sendWhatsAppMessage({
+                id: booking.waterpark.toString(),
+                waterparkName: booking.waterparkName,
+                customBookingId: booking.customBookingId,
+                customerName: booking.name,
+                customerPhone: booking.phone,
+                date: booking.date,
+                adultquantity: booking.adults,
+                childquantity: booking.children,
+                totalAmount: booking.totalAmount,
+                left: booking.leftamount,
+              }).catch(err => {
+                console.error("[verifyPayment] Customer WhatsApp error:", err.message);
+                return { status: 'failed', error: err.message };
+              }),
+              
+              // Self WhatsApp
+              selfWhatsAppMessage({
+                id: booking.waterpark.toString(),
+                waterparkName: booking.waterparkName,
+                customBookingId: booking.customBookingId,
+                customerName: booking.name,
+                customerPhone: booking.phone,
+                date: booking.date,
+                adultquantity: booking.adults,
+                childquantity: booking.children,
+                totalAmount: booking.totalAmount,
+                left: booking.leftamount,
+              }).catch(err => {
+                console.error("[verifyPayment] Self WhatsApp error:", err.message);
+                return { status: 'failed', error: err.message };
+              }),
 
-          parkWhatsAppMessage({
-            id: booking.waterpark.toString(),
-            waterparkName: booking.waterparkName,
-            customBookingId: booking.customBookingId,
-            customerName: booking.name,
-            waternumber: booking.waternumber,
-            customerPhone: booking.phone,
-            date: booking.date,
-            adultquantity: booking.adults,
-            childquantity: booking.children,
-            totalAmount: booking.totalAmount,
-            left: booking.leftamount,
-          }).catch(err => console.error("[verifyPayment] Park WhatsApp error:", err.message)),
+              // Park WhatsApp
+              parkWhatsAppMessage({
+                id: booking.waterpark.toString(),
+                waterparkName: booking.waterparkName,
+                customBookingId: booking.customBookingId,
+                customerName: booking.name,
+                waternumber: booking.waternumber,
+                customerPhone: booking.phone,
+                date: booking.date,
+                adultquantity: booking.adults,
+                childquantity: booking.children,
+                totalAmount: booking.totalAmount,
+                left: booking.leftamount,
+              }).catch(err => {
+                console.error("[verifyPayment] Park WhatsApp error:", err.message);
+                return { status: 'failed', error: err.message };
+              }),
 
-        // Email
-        sendEmail(
-          [booking.email, "am542062@gmail.com"],
-          `✅ Your Booking is Confirmed for ${booking.waterparkName}!`,
-          `
-          <!DOCTYPE html>
-          <html lang="en">
-          <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>Booking Confirmation</title>
-            <style>
-              body {
-                margin: 0;
-                padding: 0;
-                background-color: #f4f4f7;
-                font-family: Arial, sans-serif;
-              }
-              .container {
-                max-width: 600px;
-                margin: 20px auto;
-                background-color: #ffffff;
-                border-radius: 12px;
-                overflow: hidden;
-                border: 1px solid #dee2e6;
-              }
-              .header {
-                background-color: #007bff;
-                color: #ffffff;
-                padding: 30px 20px;
-                text-align: center;
-              }
-              .header h1 {
-                margin: 0;
-                font-size: 28px;
-                font-weight: bold;
-              }
-              .content {
-                padding: 30px;
-                color: #333333;
-                line-height: 1.6;
-              }
-              .content h2 {
-                color: #0056b3;
-                font-size: 22px;
-                margin-top: 0;
-              }
-              .details-table, .payment-table {
-                width: 100%;
-                border-collapse: collapse;
-                margin-top: 20px;
-              }
-              .details-table td, .payment-table td {
-                padding: 12px 0;
-                font-size: 16px;
-                border-bottom: 1px solid #eeeeee;
-              }
-              .details-table td:first-child {
-                color: #555555;
-              }
-              .details-table td:last-child, .payment-table td:last-child {
-                text-align: right;
-                font-weight: bold;
-              }
-              .payment-table .total-due td {
-                font-size: 20px;
-                font-weight: bold;
-                color: #d9534f;
-              }
-              .payment-table .paid td {
-                color: #5cb85c;
-              }
-              .cta-button {
-                display: block;
-                width: 200px;
-                margin: 30px auto;
-                padding: 15px 20px;
-                background-color: #007bff;
-                color: #ffffff;
-                text-align: center;
-                text-decoration: none;
-                border-radius: 8px;
-                font-size: 16px;
-                font-weight: bold;
-              }
-              .footer {
-                text-align: center;
-                padding: 20px;
-                font-size: 12px;
-                color: #888888;
-                background-color: #f8f9fa;
-              }
-            </style>
-          </head>
-          <body>
-            <div class="container">
-              <div class="header">
-                <h1>${booking.waterparkName}</h1>
-              </div>
-              <div class="content">
-                <h2>Your Booking is Confirmed!</h2>
-                <p>Hello ${booking.name}, thank you for your booking! We are excited to welcome you for a day of fun and splashes. Please find your booking details below.</p>
+              // Email
+              sendEmail(
+                [booking.email, "am542062@gmail.com"],
+                `✅ Your Booking is Confirmed for ${booking.waterparkName}!`,
+                `
+                <!DOCTYPE html>
+                <html lang="en">
+                <head>
+                  <meta charset="UTF-8">
+                  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                  <title>Booking Confirmation</title>
+                  <style>
+                    body {
+                      margin: 0;
+                      padding: 0;
+                      background-color: #f4f4f7;
+                      font-family: Arial, sans-serif;
+                    }
+                    .container {
+                      max-width: 600px;
+                      margin: 20px auto;
+                      background-color: #ffffff;
+                      border-radius: 12px;
+                      overflow: hidden;
+                      border: 1px solid #dee2e6;
+                    }
+                    .header {
+                      background-color: #007bff;
+                      color: #ffffff;
+                      padding: 30px 20px;
+                      text-align: center;
+                    }
+                    .header h1 {
+                      margin: 0;
+                      font-size: 28px;
+                      font-weight: bold;
+                    }
+                    .content {
+                      padding: 30px;
+                      color: #333333;
+                      line-height: 1.6;
+                    }
+                    .content h2 {
+                      color: #0056b3;
+                      font-size: 22px;
+                      margin-top: 0;
+                    }
+                    .details-table, .payment-table {
+                      width: 100%;
+                      border-collapse: collapse;
+                      margin-top: 20px;
+                    }
+                    .details-table td, .payment-table td {
+                      padding: 12px 0;
+                      font-size: 16px;
+                      border-bottom: 1px solid #eeeeee;
+                    }
+                    .details-table td:first-child {
+                      color: #555555;
+                    }
+                    .details-table td:last-child, .payment-table td:last-child {
+                      text-align: right;
+                      font-weight: bold;
+                    }
+                    .payment-table .total-due td {
+                      font-size: 20px;
+                      font-weight: bold;
+                      color: #d9534f;
+                    }
+                    .payment-table .paid td {
+                      color: #5cb85c;
+                    }
+                    .cta-button {
+                      display: block;
+                      width: 200px;
+                      margin: 30px auto;
+                      padding: 15px 20px;
+                      background-color: #007bff;
+                      color: #ffffff;
+                      text-align: center;
+                      text-decoration: none;
+                      border-radius: 8px;
+                      font-size: 16px;
+                      font-weight: bold;
+                    }
+                    .footer {
+                      text-align: center;
+                      padding: 20px;
+                      font-size: 12px;
+                      color: #888888;
+                      background-color: #f8f9fa;
+                    }
+                  </style>
+                </head>
+                <body>
+                  <div class="container">
+                    <div class="header">
+                      <h1>${booking.waterparkName}</h1>
+                    </div>
+                    <div class="content">
+                      <h2>Your Booking is Confirmed!</h2>
+                      <p>Hello ${booking.name}, thank you for your booking! We are excited to welcome you for a day of fun and splashes. Please find your booking details below.</p>
 
-                <table class="details-table">
-                  <tr>
-                    <td>Booking ID:</td>
-                    <td style="font-family: monospace;">${booking.customBookingId}</td>
-                  </tr>
-                  <tr>
-                    <td>Visit Date:</td>
-                    <td>${new Date(booking.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</td>
-                  </tr>
-                  <tr>
-                    <td>Guests:</td>
-                    <td>${booking.adults} Adult(s), ${booking.children} Child(ren)</td>
-                  </tr>
-                   <tr>
-                    <td>Phone:</td>
-                    <td>${booking.phone}</td>
-                  </tr>
-                </table>
+                      <table class="details-table">
+                        <tr>
+                          <td>Booking ID:</td>
+                          <td style="font-family: monospace;">${booking.customBookingId}</td>
+                        </tr>
+                        <tr>
+                          <td>Visit Date:</td>
+                          <td>${new Date(booking.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</td>
+                        </tr>
+                        <tr>
+                          <td>Guests:</td>
+                          <td>${booking.adults} Adult(s), ${booking.children} Child(ren)</td>
+                        </tr>
+                         <tr>
+                          <td>Phone:</td>
+                          <td>${booking.phone}</td>
+                        </tr>
+                      </table>
 
-                <h2 style="margin-top: 30px;">Payment Summary</h2>
-                <table class="payment-table">
-                  <tr>
-                    <td>Total Amount:</td>
-                    <td>₹${booking.totalAmount.toFixed(2)}</td>
-                  </tr>
-                  <tr class="paid">
-                    <td>Advance Paid:</td>
-                    <td>₹${booking.advanceAmount.toFixed(2)}</td>
-                  </tr>
-                  <tr class="total-due">
-                    <td>Amount Due at Park:</td>
-                    <td>₹${booking.leftamount.toFixed(2)}</td>
-                  </tr>
-                </table>
-                
-                <a href="https://waterpark-frontend.vercel.app/booking/${booking.customBookingId}" class="cta-button" style="color: #ffffff;">View Your Ticket</a>
-                
-                <p style="text-align: center; color: #555;">Please show the ticket at the ticket counter upon your arrival.</p>
-              </div>
-              <div class="footer">
-                <p>This is an automated email. Please do not reply.</p>
-                <p>&copy; ${new Date().getFullYear()} ${booking.waterparkName}. All rights reserved.</p>
-              </div>
-            </div>
-          </body>
-          </html>
-          `
-        ).catch(err => console.error("[sendEmail] Email error:", err.message))
-        ];
+                      <h2 style="margin-top: 30px;">Payment Summary</h2>
+                      <table class="payment-table">
+                        <tr>
+                          <td>Total Amount:</td>
+                          <td>₹${booking.totalAmount.toFixed(2)}</td>
+                        </tr>
+                        <tr class="paid">
+                          <td>Advance Paid:</td>
+                          <td>₹${booking.advanceAmount.toFixed(2)}</td>
+                        </tr>
+                        <tr class="total-due">
+                          <td>Amount Due at Park:</td>
+                          <td>₹${booking.leftamount.toFixed(2)}</td>
+                        </tr>
+                      </table>
+                      
+                      <a href="https://www.waterparkchalo.com/ticket?bookingId=${booking.customBookingId}" class="cta-button" style="color: #ffffff;">View Your Ticket</a>
+                      
+                      <p style="text-align: center; color: #555;">Please show the ticket at the ticket counter upon your arrival.</p>
+                    </div>
+                    <div class="footer">
+                      <p>This is an automated email. Please do not reply.</p>
+                      <p>&copy; ${new Date().getFullYear()} ${booking.waterparkName}. All rights reserved.</p>
+                    </div>
+                  </div>
+                </body>
+                </html>
+                `
+              ).catch(err => {
+                console.error("[verifyPayment] Email error:", err.message);
+                return { status: 'failed', error: err.message };
+              })
+            ]);
 
-        // Don't wait for notifications to complete - respond immediately
-        Promise.allSettled(notificationPromises).then(results => {
-          console.log("[verifyPayment] All notifications completed:", results.map(r => r.status));
-        });
+            console.log("[verifyPayment] All notifications completed:", notificationResults.map(r => r.status));
+            console.log("[verifyPayment] Notification results:", notificationResults);
+          } catch (error) {
+            console.error("[verifyPayment] Error in background notifications:", error);
+          }
+        })();
 
         return res
           .status(200)
@@ -880,9 +922,18 @@ exports.getOrdersByEmail = async (req, res) => {
     }
 
     // Case-insensitive search for email in Booking collection
+    // Include all bookings but prioritize completed ones
     const orders = await Booking.find({
       email: { $regex: new RegExp(`^${userEmail}$`, "i") },
-    }).sort({ bookingDate: -1 });
+    })
+    .sort({ 
+      paymentStatus: -1, // Completed first
+      bookingDate: -1 
+    });
+
+    const completedCount = orders.filter(o => o.paymentStatus === "Completed").length;
+    console.log(`[getOrdersByEmail] Found ${orders.length} bookings for email: ${userEmail}`);
+    console.log(`[getOrdersByEmail] Completed bookings: ${completedCount}`);
 
     res.status(200).json({ success: true, orders });
   } catch (error) {
@@ -1008,8 +1059,14 @@ exports.getUserBookings = async (req, res) => {
     }
 
     console.log("[getUserBookings] Querying bookings with:", query);
-    const bookings = await Booking.find(query).sort({ bookingDate: -1 });
-    console.log("[getUserBookings] Bookings found:", bookings.length);
+    const bookings = await Booking.find(query)
+      .sort({ 
+        paymentStatus: -1, // Completed first
+        bookingDate: -1 
+      });
+    
+    const completedCount = bookings.filter(b => b.paymentStatus === "Completed").length;
+    console.log("[getUserBookings] Bookings found:", bookings.length, `(Completed: ${completedCount})`);
 
     if (!bookings.length) {
       return res
