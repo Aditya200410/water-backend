@@ -4,6 +4,7 @@ const bookingController = require("../controllers/bookingController");
 
 router.post("/create", bookingController.createBooking);
 router.post("/verify", bookingController.verifyPayment);
+router.post("/mark-completed", bookingController.markPaymentCompleted);
 router.get('/email', bookingController.getOrdersByEmail);
 router.get('/user-bookings', bookingController.getBookingsByEmailOrPhone); // New route for email OR phone
 // New route for getting booking with ticket details (for sharing)

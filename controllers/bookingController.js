@@ -810,6 +810,327 @@ exports.verifyPayment = async (req, res) => {
   }
 };
 
+// ----------------------------
+// Mark Payment as Completed (without verification - for success page)
+// ----------------------------
+exports.markPaymentCompleted = async (req, res) => {
+  console.log("[markPaymentCompleted] Request body:", req.body);
+
+  try {
+    const {
+      orderId, // PhonePe orderId (transaction ID)
+      merchantOrderId, // PhonePe merchantOrderId
+      bookingId, // customBookingId
+    } = req.body;
+
+    if (!bookingId) {
+      console.warn("[markPaymentCompleted] Missing required fields.");
+      return res
+        .status(400)
+        .json({ success: false, message: "Missing required field: bookingId is required" });
+    }
+
+    // Find booking by customBookingId
+    const booking = await Booking.findOne({ customBookingId: bookingId });
+    if (!booking) {
+      console.warn("[markPaymentCompleted] Booking not found:", bookingId);
+      return res
+        .status(404)
+        .json({ success: false, message: "Booking not found." });
+    }
+
+    // Check if already completed
+    if (booking.paymentStatus === "Completed") {
+      console.log("[markPaymentCompleted] Booking already completed:", bookingId);
+      return res.status(200).json({
+        success: true,
+        message: "Booking already marked as completed",
+        booking,
+      });
+    }
+
+    // Update booking status to Completed
+    booking.paymentStatus = "Completed";
+    booking.paymentType = "PhonePe";
+    if (orderId) {
+      booking.paymentId = orderId;
+    }
+    if (orderId && !booking.phonepeOrderId) {
+      booking.phonepeOrderId = orderId;
+    }
+    if (merchantOrderId && !booking.phonepeMerchantOrderId) {
+      booking.phonepeMerchantOrderId = merchantOrderId;
+    }
+
+    // Save booking with validation
+    try {
+      await booking.save();
+      console.log(
+        "[markPaymentCompleted] Booking updated with payment success:",
+        booking.customBookingId,
+        "Payment Status:",
+        booking.paymentStatus,
+        "Payment Type:",
+        booking.paymentType,
+        "Payment ID:",
+        booking.paymentId
+      );
+
+      // Verify the save was successful
+      const savedBooking = await Booking.findOne({ customBookingId: booking.customBookingId });
+      if (savedBooking && savedBooking.paymentStatus === "Completed") {
+        console.log("[markPaymentCompleted] ✅ Booking successfully saved with paymentStatus: Completed");
+      } else {
+        console.error("[markPaymentCompleted] ⚠️ Warning: Booking save verification failed");
+      }
+    } catch (saveError) {
+      console.error("[markPaymentCompleted] Error saving booking:", saveError);
+      throw new Error("Failed to save booking with payment status");
+    }
+
+    // ✅ Use the readable customBookingId for the frontend URL
+    const frontendUrl = `https://www.waterparkchalo.com/ticket?bookingId=${booking.customBookingId}`;
+    console.log("[markPaymentCompleted] Ticket URL:", frontendUrl);
+
+    // ✅ Send all notifications in parallel for faster response
+    console.log("[markPaymentCompleted] Sending notifications in parallel...");
+    
+    // Send notifications in background (don't block response)
+    (async () => {
+      try {
+        console.log("[markPaymentCompleted] Starting background notifications for:", booking.customBookingId);
+        
+        const notificationResults = await Promise.allSettled([
+          // Customer WhatsApp
+          sendWhatsAppMessage({
+            id: booking.waterpark.toString(),
+            waterparkName: booking.waterparkName,
+            customBookingId: booking.customBookingId,
+            customerName: booking.name,
+            customerPhone: booking.phone,
+            date: booking.date,
+            adultquantity: booking.adults,
+            childquantity: booking.children,
+            totalAmount: booking.totalAmount,
+            left: booking.leftamount,
+          }).catch(err => {
+            console.error("[markPaymentCompleted] Customer WhatsApp error:", err.message);
+            return { status: 'failed', error: err.message };
+          }),
+          
+          // Self WhatsApp
+          selfWhatsAppMessage({
+            id: booking.waterpark.toString(),
+            waterparkName: booking.waterparkName,
+            customBookingId: booking.customBookingId,
+            customerName: booking.name,
+            customerPhone: booking.phone,
+            date: booking.date,
+            adultquantity: booking.adults,
+            childquantity: booking.children,
+            totalAmount: booking.totalAmount,
+            left: booking.leftamount,
+          }).catch(err => {
+            console.error("[markPaymentCompleted] Self WhatsApp error:", err.message);
+            return { status: 'failed', error: err.message };
+          }),
+
+          // Park WhatsApp
+          parkWhatsAppMessage({
+            id: booking.waterpark.toString(),
+            waterparkName: booking.waterparkName,
+            customBookingId: booking.customBookingId,
+            customerName: booking.name,
+            waternumber: booking.waternumber,
+            customerPhone: booking.phone,
+            date: booking.date,
+            adultquantity: booking.adults,
+            childquantity: booking.children,
+            totalAmount: booking.totalAmount,
+            left: booking.leftamount,
+          }).catch(err => {
+            console.error("[markPaymentCompleted] Park WhatsApp error:", err.message);
+            return { status: 'failed', error: err.message };
+          }),
+
+          // Email
+          sendEmail(
+            [booking.email, "am542062@gmail.com"],
+            `✅ Your Booking is Confirmed for ${booking.waterparkName}!`,
+            `
+            <!DOCTYPE html>
+            <html lang="en">
+            <head>
+              <meta charset="UTF-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1.0">
+              <title>Booking Confirmation</title>
+              <style>
+                body {
+                  margin: 0;
+                  padding: 0;
+                  background-color: #f4f4f7;
+                  font-family: Arial, sans-serif;
+                }
+                .container {
+                  max-width: 600px;
+                  margin: 20px auto;
+                  background-color: #ffffff;
+                  border-radius: 12px;
+                  overflow: hidden;
+                  border: 1px solid #dee2e6;
+                }
+                .header {
+                  background-color: #007bff;
+                  color: #ffffff;
+                  padding: 30px 20px;
+                  text-align: center;
+                }
+                .header h1 {
+                  margin: 0;
+                  font-size: 28px;
+                  font-weight: bold;
+                }
+                .content {
+                  padding: 30px;
+                  color: #333333;
+                  line-height: 1.6;
+                }
+                .content h2 {
+                  color: #0056b3;
+                  font-size: 22px;
+                  margin-top: 0;
+                }
+                .details-table, .payment-table {
+                  width: 100%;
+                  border-collapse: collapse;
+                  margin-top: 20px;
+                }
+                .details-table td, .payment-table td {
+                  padding: 12px 0;
+                  font-size: 16px;
+                  border-bottom: 1px solid #eeeeee;
+                }
+                .details-table td:first-child {
+                  color: #555555;
+                }
+                .details-table td:last-child, .payment-table td:last-child {
+                  text-align: right;
+                  font-weight: bold;
+                }
+                .payment-table .total-due td {
+                  font-size: 20px;
+                  font-weight: bold;
+                  color: #d9534f;
+                }
+                .payment-table .paid td {
+                  color: #5cb85c;
+                }
+                .cta-button {
+                  display: block;
+                  width: 200px;
+                  margin: 30px auto;
+                  padding: 15px 20px;
+                  background-color: #007bff;
+                  color: #ffffff;
+                  text-align: center;
+                  text-decoration: none;
+                  border-radius: 8px;
+                  font-size: 16px;
+                  font-weight: bold;
+                }
+                .footer {
+                  text-align: center;
+                  padding: 20px;
+                  font-size: 12px;
+                  color: #888888;
+                  background-color: #f8f9fa;
+                }
+              </style>
+            </head>
+            <body>
+              <div class="container">
+                <div class="header">
+                  <h1>${booking.waterparkName}</h1>
+                </div>
+                <div class="content">
+                  <h2>Your Booking is Confirmed!</h2>
+                  <p>Hello ${booking.name}, thank you for your booking! We are excited to welcome you for a day of fun and splashes. Please find your booking details below.</p>
+
+                  <table class="details-table">
+                    <tr>
+                      <td>Booking ID:</td>
+                      <td style="font-family: monospace;">${booking.customBookingId}</td>
+                    </tr>
+                    <tr>
+                      <td>Visit Date:</td>
+                      <td>${new Date(booking.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</td>
+                    </tr>
+                    <tr>
+                      <td>Guests:</td>
+                      <td>${booking.adults} Adult(s), ${booking.children} Child(ren)</td>
+                    </tr>
+                     <tr>
+                      <td>Phone:</td>
+                      <td>${booking.phone}</td>
+                    </tr>
+                  </table>
+
+                  <h2 style="margin-top: 30px;">Payment Summary</h2>
+                  <table class="payment-table">
+                    <tr>
+                      <td>Total Amount:</td>
+                      <td>₹${booking.totalAmount.toFixed(2)}</td>
+                    </tr>
+                    <tr class="paid">
+                      <td>Advance Paid:</td>
+                      <td>₹${booking.advanceAmount.toFixed(2)}</td>
+                    </tr>
+                    <tr class="total-due">
+                      <td>Amount Due at Park:</td>
+                      <td>₹${booking.leftamount.toFixed(2)}</td>
+                    </tr>
+                  </table>
+                  
+                  <a href="https://www.waterparkchalo.com/ticket?bookingId=${booking.customBookingId}" class="cta-button" style="color: #ffffff;">View Your Ticket</a>
+                  
+                  <p style="text-align: center; color: #555;">Please show the ticket at the ticket counter upon your arrival.</p>
+                </div>
+                <div class="footer">
+                  <p>This is an automated email. Please do not reply.</p>
+                  <p>&copy; ${new Date().getFullYear()} ${booking.waterparkName}. All rights reserved.</p>
+                </div>
+              </div>
+            </body>
+            </html>
+            `
+          ).catch(err => {
+            console.error("[markPaymentCompleted] Email error:", err.message);
+            return { status: 'failed', error: err.message };
+          })
+        ]);
+
+        console.log("[markPaymentCompleted] All notifications completed:", notificationResults.map(r => r.status));
+        console.log("[markPaymentCompleted] Notification results:", notificationResults);
+      } catch (error) {
+        console.error("[markPaymentCompleted] Error in background notifications:", error);
+      }
+    })();
+
+    return res
+      .status(200)
+      .json({
+        success: true,
+        message: "Payment marked as completed successfully",
+        booking,
+        frontendUrl,
+      });
+  } catch (error) {
+    console.error("[markPaymentCompleted] Error:", error);
+    return res
+      .status(500)
+      .json({ success: false, message: "Error marking payment as completed." });
+  }
+};
 
 // --- The rest of your controller functions (getSingleBooking, getAllBookings, etc.) remain unchanged. ---
 // --- I am including them here so you can copy-paste the whole file. ---
