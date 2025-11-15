@@ -2,6 +2,7 @@ const Product = require('../models/Product');
 const mongoose = require('mongoose');
 const fs = require('fs').promises;
 const path = require('path');
+const formatImageUrl = require('../utils/formatImageUrl');
 
 // Get all products
 const getAllProducts = async (req, res) => {
@@ -115,6 +116,17 @@ const createProductWithFiles = async (req, res) => {
 
     // 3. Process uploaded videos
     const videoPaths = files.videos ? files.videos.map(video => video.path) : [];
+    // Normalize image URLs (convert filesystem paths to public URLs)
+    for (let i = 0; i < imagePaths.length; i++) {
+      const p = imagePaths[i];
+      // If path looks like a filesystem path, convert to public waterbackend path
+      if (typeof p === 'string' && (p.includes('\\') || p.includes('/') && (p.includes('data') || p.match(/^[A-Za-z]:\\/)))) {
+        // Use the filename and map to the data static route
+        const filename = path.basename(p);
+        imagePaths[i] = `/waterbackend/data/uploads/products/${filename}`;
+      }
+      imagePaths[i] = formatImageUrl(imagePaths[i], req);
+    }
     console.log('Added videos:', videoPaths);
 
     const newProduct = new Product({
@@ -221,6 +233,15 @@ const updateProductWithFiles = async (req, res) => {
 
     // 3. Combine retained and new URLs to form the final image array
     const finalImagePaths = [...retainedUrls, ...newImageUrls];
+    // Normalize final image URLs (handle filesystem paths)
+    for (let i = 0; i < finalImagePaths.length; i++) {
+      const p = finalImagePaths[i];
+      if (typeof p === 'string' && (p.includes('\\') || p.includes('/') && (p.includes('data') || p.match(/^[A-Za-z]:\\/)))) {
+        const filename = path.basename(p);
+        finalImagePaths[i] = `/waterbackend/data/uploads/products/${filename}`;
+      }
+      finalImagePaths[i] = formatImageUrl(finalImagePaths[i], req);
+    }
     console.log('Final image array for update:', finalImagePaths);
     
     // 4. Handle video updates (additive approach)

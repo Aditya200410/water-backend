@@ -1,46 +1,45 @@
 const HeroCarousel = require('../models/heroCarousel');
-const fs = require('fs').promises;
+const fs = require('fs');                // <-- use full fs
+const fsPromises = fs.promises;          // <-- for async operations
 const path = require('path');
 const multer = require('multer');
-const cloudinary = require('cloudinary').v2;
-const { CloudinaryStorage } = require('multer-storage-cloudinary');
 
 // Path to JSON file where carousel items are stored
 const dataFilePath = path.join(__dirname, '../data/hero-carousel.json');
 
-// Cloudinary config
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET,
-});
+// Ensure data directory exists
+const dataDir = path.dirname(dataFilePath);
+if (!fs.existsSync(dataDir)) {
+  fs.mkdirSync(dataDir, { recursive: true });
+}
 
-// Configure storage
-const storage = new CloudinaryStorage({
-  cloudinary: cloudinary,
-  params: {
-    folder: 'hero-carousel',
-    allowed_formats: ['jpg', 'jpeg', 'png', 'gif', 'mp4', 'webp'],
-    transformation: [{ width: 1920, height: 1080, crop: 'limit' }],
-    resource_type: 'auto'
+// Use local disk storage for hero-carousel uploads
+const uploadsDir = path.join(__dirname, '..', 'data', 'uploads', 'hero-carousel');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, uploadsDir),
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname) || '';
+    cb(null, `${Date.now()}-${file.fieldname}${ext}`);
   }
 });
 
-// Configure multer
 const upload = multer({
-  storage: storage,
-  limits: {
-    fileSize: 50 * 1024 * 1024 // 50MB limit for videos
-  }
+  storage,
+  limits: { fileSize: 50 * 1024 * 1024 } // 50 MB
 });
 
 // Helper function to read carousel data
 const readCarouselData = async () => {
   try {
-    const data = await fs.readFile(dataFilePath, 'utf8');
+    const data = await fsPromises.readFile(dataFilePath, 'utf8');
     return JSON.parse(data).carousel || [];
   } catch (error) {
-    console.error('Error reading carousel data:', error);
+    // File may not exist on first run, or JSON might be empty
+    console.error('Error reading carousel data:', error.message);
     return [];
   }
 };
@@ -48,10 +47,14 @@ const readCarouselData = async () => {
 // Helper function to write carousel data
 const writeCarouselData = async (data) => {
   try {
-    await fs.writeFile(dataFilePath, JSON.stringify({ carousel: data }, null, 2));
+    await fsPromises.writeFile(
+      dataFilePath,
+      JSON.stringify({ carousel: data }, null, 2),
+      'utf8'
+    );
     return true;
   } catch (error) {
-    console.error('Error writing carousel data:', error);
+    console.error('Error writing carousel data:', error.message);
     return false;
   }
 };
@@ -106,8 +109,10 @@ const createCarouselItemWithFiles = async (req, res) => {
         error: 'Image is required. Make sure you are uploading as multipart/form-data and the file field is named "image".' 
       });
     }
+
     const files = req.files;
     const itemData = req.body;
+
     // Validate required fields
     const requiredFields = ["title"];
     const missingFields = [];
@@ -119,11 +124,20 @@ const createCarouselItemWithFiles = async (req, res) => {
     if (missingFields.length > 0) {
       return res.status(400).json({ error: `Missing required fields: ${missingFields.join(', ')}` });
     }
+
     // Process uploaded file
-    const imageUrl = files.image[0].path;
+    let imageUrl = files.image[0].path;
+
+    // If multer stored a filesystem path, convert to public URL
+    if (typeof imageUrl === 'string' && (imageUrl.includes('\\') || imageUrl.match(/^[A-Za-z]:\\/))) {
+      const filename = path.basename(imageUrl);
+      imageUrl = `/waterbackend/data/uploads/hero-carousel/${filename}`;
+    }
+
     // Get current max order
     const maxOrderItem = await HeroCarousel.findOne().sort('-order');
     const newOrder = maxOrderItem ? maxOrderItem.order + 1 : 0;
+
     const newItem = new HeroCarousel({
       title: itemData.title.trim(),
       subtitle: (itemData.subtitle || '').trim(),
@@ -180,7 +194,12 @@ const updateCarouselItemWithFiles = async (req, res) => {
     let imageUrl = existingItem.image;
     if (files.image && files.image[0]) {
       imageUrl = files.image[0].path;
+      if (typeof imageUrl === 'string' && (imageUrl.includes('\\') || imageUrl.match(/^[A-Za-z]:\\/))) {
+        const filename = path.basename(imageUrl);
+        imageUrl = `/waterbackend/data/uploads/hero-carousel/${filename}`;
+      }
     }
+
     const updatedItem = {
       title: (itemData.title || existingItem.title).trim(),
       subtitle: (itemData.subtitle || existingItem.subtitle || '').trim(),
@@ -188,9 +207,15 @@ const updateCarouselItemWithFiles = async (req, res) => {
       buttonText: (itemData.buttonText || existingItem.buttonText || 'Shop Now').trim(),
       buttonLink: (itemData.buttonLink || existingItem.buttonLink || '/shop').trim(),
       image: imageUrl,
-      isMobile: typeof itemData.isMobile !== 'undefined' ? (itemData.isMobile === 'true' || itemData.isMobile === true) : existingItem.isMobile,
-      isActive: typeof itemData.isActive !== 'undefined' ? (itemData.isActive === 'true' || itemData.isActive === true) : existingItem.isActive,
-      order: typeof itemData.order !== 'undefined' ? itemData.order : existingItem.order
+      isMobile: typeof itemData.isMobile !== 'undefined'
+        ? (itemData.isMobile === 'true' || itemData.isMobile === true)
+        : existingItem.isMobile,
+      isActive: typeof itemData.isActive !== 'undefined'
+        ? (itemData.isActive === 'true' || itemData.isActive === true)
+        : existingItem.isActive,
+      order: typeof itemData.order !== 'undefined'
+        ? itemData.order
+        : existingItem.order
     };
 
     // Log the update operation
@@ -275,4 +300,4 @@ module.exports = {
   deleteCarouselItem,
   toggleCarouselActive,
   updateCarouselOrder
-}; 
+};

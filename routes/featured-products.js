@@ -1,8 +1,8 @@
 const express = require("express");
 const router = express.Router();
 const multer = require('multer');
-const { CloudinaryStorage } = require('multer-storage-cloudinary');
-const cloudinary = require('cloudinary').v2;
+const fs = require('fs');
+const path = require('path');
 const { isAdmin, authenticateToken } = require('../middleware/auth');
 const {
   getAllFeaturedProducts,
@@ -12,31 +12,19 @@ const {
   deleteFeaturedProduct
 } = require('../controllers/featuredProductController');
 
-// Configure Cloudinary
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET
-});
+// Use local disk storage for featured-products uploads
+const uploadsDir = path.join(__dirname, '..', 'data', 'uploads', 'featured-products');
+if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 
-// Configure storage
-const storage = new CloudinaryStorage({
-  cloudinary: cloudinary,
-  params: {
-    folder: 'featured-products',
-    allowed_formats: ['jpg', 'jpeg', 'png', 'webp'],
-    transformation: [{ width: 800, height: 800, crop: 'limit' }],
-    resource_type: 'auto'
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, uploadsDir),
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname) || '';
+    cb(null, `${Date.now()}-${file.fieldname}${ext}`);
   }
 });
 
-// Configure multer
-const upload = multer({
-  storage: storage,
-  limits: {
-    fileSize: 10 * 1024 * 1024 // 10MB limit
-  }
-});
+const upload = multer({ storage, limits: { fileSize: 10 * 1024 * 1024 } });
 
 // Configure multiple file upload fields
 const uploadFields = upload.fields([

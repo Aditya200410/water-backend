@@ -108,7 +108,7 @@ const userProductDir = path.join(dataDir, 'userproduct');
 });
 
 // Serve static files with proper MIME types
-app.use('/pawnbackend/data', (req, res, next) => {
+app.use('/waterbackend/data', (req, res, next) => {
   const filePath = path.join(__dirname, 'data', req.path);
   const ext = path.extname(filePath).toLowerCase();
   

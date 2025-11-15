@@ -2,6 +2,7 @@ const FeaturedProduct = require('../models/FeaturedProduct');
 const mongoose = require('mongoose');
 const fs = require('fs').promises;
 const path = require('path');
+const formatImageUrl = require('../utils/formatImageUrl');
 
 // Get all featured products
 const getAllFeaturedProducts = async (req, res) => {
@@ -91,7 +92,11 @@ const createFeaturedProductWithFiles = async (req, res) => {
     
     // Main image
     if (files.mainImage && files.mainImage[0]) {
-      const mainImageUrl = files.mainImage[0].path; // Cloudinary URL
+      let mainImageUrl = files.mainImage[0].path; // may be filesystem path
+      if (typeof mainImageUrl === 'string' && (mainImageUrl.includes('\\') || mainImageUrl.match(/^[A-Za-z]:\\/))) {
+        const filename = path.basename(mainImageUrl);
+        mainImageUrl = `/waterbackend/data/uploads/featured-products/${filename}`;
+      }
       imagePaths.push(mainImageUrl);
       console.log('Added main image:', mainImageUrl);
     }
@@ -99,10 +104,19 @@ const createFeaturedProductWithFiles = async (req, res) => {
     // Additional images
     for (let i = 1; i <= 3; i++) {
       if (files[`image${i}`] && files[`image${i}`][0]) {
-        const imageUrl = files[`image${i}`][0].path; // Cloudinary URL
+        let imageUrl = files[`image${i}`][0].path;
+        if (typeof imageUrl === 'string' && (imageUrl.includes('\\') || imageUrl.match(/^[A-Za-z]:\\/))) {
+          const filename = path.basename(imageUrl);
+          imageUrl = `/waterbackend/data/uploads/featured-products/${filename}`;
+        }
         imagePaths.push(imageUrl);
         console.log(`Added image${i}:`, imageUrl);
       }
+    }
+
+    // Normalize image paths to absolute URLs
+    for (let i = 0; i < imagePaths.length; i++) {
+      imagePaths[i] = formatImageUrl(imagePaths[i], req);
     }
 
     console.log('Creating new featured product with data:', {
@@ -199,6 +213,11 @@ const updateFeaturedProductWithFiles = async (req, res) => {
     // Ensure we have at least one image
     if (imagePaths.length === 0 && existingProduct.image) {
       imagePaths.push(existingProduct.image);
+    }
+
+    // Normalize image URLs for final array
+    for (let i = 0; i < imagePaths.length; i++) {
+      imagePaths[i] = formatImageUrl(imagePaths[i], req);
     }
 
     // Update product object

@@ -1,8 +1,8 @@
 const express = require("express");
 const router = express.Router();
 const multer = require("multer");
-const cloudinary = require('cloudinary').v2;
-const { CloudinaryStorage } = require('multer-storage-cloudinary');
+const fs = require('fs');
+const path = require('path');
 const { isAdmin, authenticateToken } = require('../middleware/auth');
 const { 
   getAllProducts, 
@@ -14,25 +14,20 @@ const {
   updateProductSections
 } = require('../controllers/productController');
 
-// Cloudinary config
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET,
+// Use local disk storage for shop/product uploads
+const uploadsDir = path.join(__dirname, '..', 'data', 'uploads', 'products');
+if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, uploadsDir),
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname) || '';
+    cb(null, `${Date.now()}-${file.fieldname}${ext}`);
+  }
 });
 
-const storage = new CloudinaryStorage({
-  cloudinary: cloudinary,
-  params: {
-    folder: 'products',
-    resource_type: 'auto',
-    allowed_formats: ['jpg', 'jpeg', 'png', 'webp', 'mp4', 'mov', 'avi'],
-  },
-});
+const upload = multer({ storage });
 
-const upload = multer({ storage: storage });
-
-// ✅ THIS IS THE CORRECT CONFIGURATION
 const uploadHandler = upload.fields([
   { name: 'mainImage', maxCount: 1 },
   { name: 'images', maxCount: 9 },      // Expects an array named 'images'

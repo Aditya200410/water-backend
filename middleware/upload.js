@@ -1,34 +1,19 @@
 const multer = require('multer');
-const { CloudinaryStorage } = require('multer-storage-cloudinary');
-const cloudinary = require('cloudinary').v2;
+const fs = require('fs');
+const path = require('path');
 
-// Configure Cloudinary
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET
-});
+// Use local disk storage for hero-carousel (or generic uploads)
+const uploadsDir = path.join(__dirname, '..', 'data', 'uploads', 'hero-carousel');
+if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 
-// Configure storage
-const storage = new CloudinaryStorage({
-  cloudinary: cloudinary,
-  params: async (req, file) => {
-    // Always use portrait for mobile banners
-    return {
-      folder: 'hero-carousel',
-      allowed_formats: ['jpg', 'jpeg', 'png', 'gif', 'mp4'],
-      resource_type: 'auto',
-      transformation: [{ width: 720, height: 1280, crop: 'limit' }]
-    };
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, uploadsDir),
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname) || '';
+    cb(null, `${Date.now()}-${file.fieldname}${ext}`);
   }
 });
 
-// Configure multer
-const upload = multer({
-  storage: storage,
-  limits: {
-    fileSize: 10 * 1024 * 1024 // 10MB limit
-  }
-});
+const upload = multer({ storage, limits: { fileSize: 10 * 1024 * 1024 } });
 
-module.exports = upload; 
+module.exports = upload;

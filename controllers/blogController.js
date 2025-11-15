@@ -2,6 +2,7 @@ const Blog = require('../models/Blog');
 const mongoose = require('mongoose');
 const fs = require('fs').promises;
 const path = require('path');
+const formatImageUrl = require('../utils/formatImageUrl');
 
 // Get all blogs
 const getAllBlogs = async (req, res) => {
@@ -116,6 +117,16 @@ const createBlogWithFiles = async (req, res) => {
       }
     }
 
+    // Convert filesystem paths to public URLs and normalize
+    for (let i = 0; i < imagePaths.length; i++) {
+      const p = imagePaths[i];
+      if (typeof p === 'string' && (p.includes('\\') || (p.includes('/') && (p.includes('data') || p.match(/^[A-Za-z]:\\/))))) {
+        const filename = path.basename(p);
+        imagePaths[i] = `/waterbackend/data/uploads/blogs/${filename}`;
+      }
+      imagePaths[i] = formatImageUrl(imagePaths[i], req);
+    }
+
     const newBlog = new Blog({
       name: blogData.name,
       material: blogData.material,
@@ -202,6 +213,16 @@ const updateBlogWithFiles = async (req, res) => {
 
     if (imagePaths.length === 0 && existingBlog.image) {
       imagePaths.push(existingBlog.image);
+    }
+
+    // Convert filesystem paths to public URLs and normalize before saving
+    for (let i = 0; i < imagePaths.length; i++) {
+      const p = imagePaths[i];
+      if (typeof p === 'string' && (p.includes('\\') || (p.includes('/') && (p.includes('data') || p.match(/^[A-Za-z]:\\/))))) {
+        const filename = path.basename(p);
+        imagePaths[i] = `/waterbackend/data/uploads/blogs/${filename}`;
+      }
+      imagePaths[i] = formatImageUrl(imagePaths[i], req);
     }
 
     const updatedBlog = {

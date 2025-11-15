@@ -1,35 +1,24 @@
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
-const cloudinary = require('cloudinary').v2;
-const { CloudinaryStorage } = require('multer-storage-cloudinary');
+const fs = require('fs');
+const path = require('path');
 const { isAdmin, authenticateToken } = require('../middleware/auth');
 const categoryController = require('../controllers/categoryController');
 
-// Cloudinary config
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET,
-});
+// Use local disk storage for category uploads
+const uploadsDir = path.join(__dirname, '..', 'data', 'uploads', 'categories');
+if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 
-// Multer storage for Cloudinary
-const storage = new CloudinaryStorage({
-  cloudinary: cloudinary,
-  params: {
-    folder: 'pawnshop-categories',
-    allowed_formats: ['jpg', 'jpeg', 'png', 'webp', 'mp4', 'webm', 'ogg'],
-    transformation: [{ width: 800, height: 800, crop: 'limit' }],
-    resource_type: 'auto', // This allows both images and videos
-  },
-});
-
-const upload = multer({ 
-  storage: storage,
-  limits: {
-    fileSize: 50 * 1024 * 1024 // 50MB limit for videos
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, uploadsDir),
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname) || '';
+    cb(null, `${Date.now()}-${file.fieldname}${ext}`);
   }
 });
+
+const upload = multer({ storage, limits: { fileSize: 50 * 1024 * 1024 } });
 
 // Upload multiple files (image + video)
 const uploadFiles = upload.fields([
