@@ -3,6 +3,7 @@ const router = express.Router();
 const multer = require("multer");
 const fs = require('fs');
 const path = require('path');
+const { isAdmin, authenticateToken } = require('../middleware/auth');
 const { 
   getAllBlogs, 
   getBlog, 
@@ -25,7 +26,7 @@ const storage = multer.diskStorage({
   }
 });
 
-const upload = multer({ storage });
+const upload = multer({ storage, limits: { fileSize: 50 * 1024 * 1024 } });
 
 // Upload multiple images (main image + 3 additional images)
 const uploadImages = upload.fields([
@@ -35,38 +36,16 @@ const uploadImages = upload.fields([
   { name: 'image3', maxCount: 1 }
 ]);
 
-// Middleware to handle multer upload
-const handleUpload = (req, res, next) => {
-  uploadImages(req, res, function(err) {
-    if (err instanceof multer.MulterError) {
-      return res.status(400).json({ error: 'File upload error', details: err.message });
-    } else if (err) {
-      return res.status(500).json({ error: 'File upload error', details: err.message });
-    }
-    next();
-  });
-};
-
-// Get all blogs
+// Public routes
 router.get("/", getAllBlogs);
-
-// Get blogs by section
 router.get("/section/:section", getBlogsBySection);
-
-// Get single blog
 router.get("/:id", getBlog);
 
-// Upload images and create blog
-router.post("/", handleUpload, createBlogWithFiles);
-
-// Update blog by id
-router.put("/:id", handleUpload, updateBlogWithFiles);
-
-// Update blog sections
-router.patch("/:id/sections", updateBlogSections);
-
-// Delete blog by id
-router.delete("/:id", deleteBlog);
+// Admin routes (Protected)
+router.post("/", authenticateToken, isAdmin, uploadImages, createBlogWithFiles);
+router.put("/:id", authenticateToken, isAdmin, uploadImages, updateBlogWithFiles);
+router.patch("/:id/sections", authenticateToken, isAdmin, updateBlogSections);
+router.delete("/:id", authenticateToken, isAdmin, deleteBlog);
 
 module.exports = router;
  

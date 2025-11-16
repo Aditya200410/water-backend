@@ -24,7 +24,7 @@ const storage = multer.diskStorage({
   }
 });
 
-const upload = multer({ storage, limits: { fileSize: 10 * 1024 * 1024 } });
+const upload = multer({ storage, limits: { fileSize: 50 * 1024 * 1024 } });
 
 // Upload multiple images (main image + 3 additional images)
 const uploadImages = upload.fields([
@@ -34,26 +34,13 @@ const uploadImages = upload.fields([
   { name: 'image3', maxCount: 1 }
 ]);
 
-// Middleware to handle multer upload
-const handleUpload = (req, res, next) => {
-  uploadImages(req, res, function(err) {
-    if (err instanceof multer.MulterError) {
-      return res.status(400).json({ error: 'File upload error', details: err.message });
-    } else if (err) {
-      return res.status(500).json({ error: 'File upload error', details: err.message });
-    }
-    next();
-  });
-};
-
 // Public routes
 router.get("/", getAllFeaturedProducts);
 router.get("/:id", getFeaturedProduct);
 
-// Admin routes
-router.post("/", authenticateToken, isAdmin, handleUpload, createFeaturedProductWithFiles);
-router.post("/upload", authenticateToken, isAdmin, handleUpload, createFeaturedProductWithFiles);
-router.put("/:id", authenticateToken, isAdmin, handleUpload, updateFeaturedProductWithFiles);
+// Admin routes (Protected)
+router.post("/", authenticateToken, isAdmin, uploadImages, createFeaturedProductWithFiles);
+router.put("/:id", authenticateToken, isAdmin, uploadImages, updateFeaturedProductWithFiles);
 router.delete("/:id", authenticateToken, isAdmin, deleteFeaturedProduct);
 
 module.exports = router; 
