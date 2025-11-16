@@ -6,19 +6,21 @@ function formatImageUrl(url, req) {
   // Clean parts
   const cleanUrl = url.replace(/^\/+/, '');
 
-  // Prefer explicit BACKEND_URL in production
-  if (process.env.NODE_ENV === 'production' && process.env.BACKEND_URL) {
+  // Always prefer explicit BACKEND_URL when available
+  if (process.env.BACKEND_URL) {
     return `${process.env.BACKEND_URL.replace(/\/+$/,'')}/${cleanUrl}`;
   }
 
-  // Fallback to request host (development or when BACKEND_URL not set)
+  // Fallback to request host if available (development)
   if (req && req.get) {
     const proto = req.protocol || 'http';
     const host = req.get('host');
-    return `${proto}://${host}/${cleanUrl}`;
+    if (host) {
+      return `${proto}://${host}/${cleanUrl}`;
+    }
   }
 
-  // Last resort, return the cleaned path
+  // Final fallback: just return the path
   return `/${cleanUrl}`;
 }
 
