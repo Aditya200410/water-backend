@@ -1,17 +1,9 @@
 const HeroCarousel = require('../models/heroCarousel');
-const fs = require('fs');                // <-- use full fs
-const fsPromises = fs.promises;          // <-- for async operations
+const fs = require('fs');
+const fsPromises = fs.promises;
 const path = require('path');
 const multer = require('multer');
-
-// Path to JSON file where carousel items are stored
-const dataFilePath = path.join(__dirname, '../data/hero-carousel.json');
-
-// Ensure data directory exists
-const dataDir = path.dirname(dataFilePath);
-if (!fs.existsSync(dataDir)) {
-  fs.mkdirSync(dataDir, { recursive: true });
-}
+const formatImageUrl = require('../utils/formatImageUrl');
 
 // Use local disk storage for hero-carousel uploads
 const uploadsDir = path.join(__dirname, '..', 'data', 'uploads', 'hero-carousel');
@@ -31,33 +23,6 @@ const upload = multer({
   storage,
   limits: { fileSize: 50 * 1024 * 1024 } // 50 MB
 });
-
-// Helper function to read carousel data
-const readCarouselData = async () => {
-  try {
-    const data = await fsPromises.readFile(dataFilePath, 'utf8');
-    return JSON.parse(data).carousel || [];
-  } catch (error) {
-    // File may not exist on first run, or JSON might be empty
-    console.error('Error reading carousel data:', error.message);
-    return [];
-  }
-};
-
-// Helper function to write carousel data
-const writeCarouselData = async (data) => {
-  try {
-    await fsPromises.writeFile(
-      dataFilePath,
-      JSON.stringify({ carousel: data }, null, 2),
-      'utf8'
-    );
-    return true;
-  } catch (error) {
-    console.error('Error writing carousel data:', error.message);
-    return false;
-  }
-};
 
 // Get all carousel items
 const getAllCarouselItems = async (req, res) => {
@@ -99,7 +64,6 @@ const getActiveCarouselItems = async (req, res) => {
 const createCarouselItemWithFiles = async (req, res) => {
   try {
     console.log('=== Starting Hero Carousel Item Creation ===');
-    console.log('Headers:', req.headers);
     console.log('Files received:', req.files);
     console.log('Body data:', req.body);
 
@@ -128,11 +92,14 @@ const createCarouselItemWithFiles = async (req, res) => {
     // Process uploaded file
     let imageUrl = files.image[0].path;
 
-    // If multer stored a filesystem path, convert to public URL
-    if (typeof imageUrl === 'string' && (imageUrl.includes('\\') || imageUrl.match(/^[A-Za-z]:\\/))) {
+    // Normalize image URL (convert filesystem paths to public URLs)
+    if (typeof imageUrl === 'string' && (imageUrl.includes('\\') || imageUrl.includes('/') && (imageUrl.includes('data') || imageUrl.match(/^[A-Za-z]:\\/)))) {
       const filename = path.basename(imageUrl);
       imageUrl = `/waterbackend/data/uploads/hero-carousel/${filename}`;
     }
+    
+    // Format image URL using utility
+    imageUrl = formatImageUrl(imageUrl, req);
 
     // Get current max order
     const maxOrderItem = await HeroCarousel.findOne().sort('-order');
@@ -156,17 +123,14 @@ const createCarouselItemWithFiles = async (req, res) => {
     
     res.status(201).json({ 
       message: "Carousel item created successfully", 
-      item: savedItem,
-      uploadedFiles: files
+      item: savedItem
     });
   } catch (error) {
     console.error('=== Error creating carousel item ===');
     console.error('Error details:', error);
-    console.error('Stack trace:', error.stack);
     res.status(500).json({ 
       message: "Error creating carousel item", 
-      error: error.message,
-      details: error.stack
+      error: error.message
     });
   }
 };
@@ -194,10 +158,12 @@ const updateCarouselItemWithFiles = async (req, res) => {
     let imageUrl = existingItem.image;
     if (files.image && files.image[0]) {
       imageUrl = files.image[0].path;
-      if (typeof imageUrl === 'string' && (imageUrl.includes('\\') || imageUrl.match(/^[A-Za-z]:\\/))) {
+      if (typeof imageUrl === 'string' && (imageUrl.includes('\\') || imageUrl.includes('/') && (imageUrl.includes('data') || imageUrl.match(/^[A-Za-z]:\\/)))) {
         const filename = path.basename(imageUrl);
         imageUrl = `/waterbackend/data/uploads/hero-carousel/${filename}`;
       }
+      // Format image URL using utility
+      imageUrl = formatImageUrl(imageUrl, req);
     }
 
     const updatedItem = {
@@ -218,19 +184,11 @@ const updateCarouselItemWithFiles = async (req, res) => {
         : existingItem.order
     };
 
-    // Log the update operation
-    console.log('Updating carousel item with data:', {
-      id,
-      imageUrl: imageUrl,
-      filesReceived: Object.keys(files)
-    });
-
     const savedItem = await HeroCarousel.findByIdAndUpdate(id, updatedItem, { new: true });
 
     res.json({ 
       message: "Carousel item updated successfully", 
-      item: savedItem,
-      uploadedFiles: files
+      item: savedItem
     });
   } catch (error) {
     console.error('Error updating carousel item:', error);

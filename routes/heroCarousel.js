@@ -1,6 +1,5 @@
 const express = require('express');
 const router = express.Router();
-const multer = require('multer');
 const { isAdmin, authenticateToken } = require('../middleware/auth');
 
 const {
@@ -20,31 +19,16 @@ const uploadFields = upload.fields([
   { name: 'image', maxCount: 1 }
 ]);
 
-// Middleware to handle multer upload
-const handleUpload = (req, res, next) => {
-  uploadFields(req, res, function(err) {
-    if (err instanceof multer.MulterError) {
-      return res.status(400).json({ error: 'File upload error', details: err.message });
-    } else if (err) {
-      return res.status(500).json({ error: 'Server error', details: err.message });
-    }
-    next();
-  });
-};
-
 // Public routes
 router.get('/active', getActiveCarouselItems);
 router.get('/', getAllCarouselItems);
 
-// Protected routes
-router.use(authenticateToken);
-router.use(isAdmin);
-
-router.get('/:id', getCarouselItem);
-router.post('/', handleUpload, createCarouselItemWithFiles);
-router.put('/:id', handleUpload, updateCarouselItemWithFiles);
-router.delete('/:id', deleteCarouselItem);
-router.patch('/:id/toggle-active', toggleCarouselActive);
-router.post('/update-order', updateCarouselOrder);
+// Protected routes (admin only)
+router.get('/:id', authenticateToken, isAdmin, getCarouselItem);
+router.post('/', authenticateToken, isAdmin, uploadFields, createCarouselItemWithFiles);
+router.put('/:id', authenticateToken, isAdmin, uploadFields, updateCarouselItemWithFiles);
+router.delete('/:id', authenticateToken, isAdmin, deleteCarouselItem);
+router.patch('/:id/toggle-active', authenticateToken, isAdmin, toggleCarouselActive);
+router.post('/update-order', authenticateToken, isAdmin, updateCarouselOrder);
 
 module.exports = router; 
