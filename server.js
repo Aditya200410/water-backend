@@ -32,21 +32,18 @@ const app = express();
 const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:5174',
-  
+  'http://localhost:5000',
   'https://admin.waterparkchalo.com',
   'https://waterpark-frontend.vercel.app',
   'https://water-admin-lyart.vercel.app',
   'https://www.waterparkchalo.com',
   'https://waterparkchalo.com'
- 
-
- 
-  
 ];
 
 function isVercelPreview(origin) {
-  // If you want to allow all Vercel preview deploys for this project, keep this regex:
-  return /^https:\/\/pawn-shop-git-.*-aditya200410s-projects\.vercel\.app$/.test(origin);
+  // Allow all Vercel preview deploys for this project
+  return /^https:\/\/water-admin(-[a-z0-9]+)?(-git-.*)?-aditya200410s-projects\.vercel\.app$/.test(origin) ||
+         /^https:\/\/waterpark-frontend(-[a-z0-9]+)?(-git-.*)?-aditya200410s-projects\.vercel\.app$/.test(origin);
 }
 
 app.use(cors({

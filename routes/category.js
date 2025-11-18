@@ -44,9 +44,7 @@ router.get('/:id', categoryController.getCategory);
 
 // Protected admin routes with file upload
 router.post('/', authenticateToken, isAdmin, handleUpload, categoryController.createCategory);
-router.post('/upload', authenticateToken, isAdmin, handleUpload, categoryController.createCategory);
 router.put('/:id', authenticateToken, isAdmin, handleUpload, categoryController.updateCategory);
-router.put('/:id/upload', authenticateToken, isAdmin, handleUpload, categoryController.updateCategory);
 router.delete('/:id', authenticateToken, isAdmin, categoryController.deleteCategory);
 
 module.exports = router; 

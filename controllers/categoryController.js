@@ -1,5 +1,6 @@
 const Category = require('../models/cate');
 const formatImageUrl = require('../utils/formatImageUrl');
+const path = require('path');
 
 // Get all categories
 exports.getAllCategories = async (req, res) => {
@@ -46,28 +47,34 @@ exports.createCategory = async (req, res) => {
       // Handle image upload
       if (req.files.image && req.files.image[0]) {
         imageUrl = req.files.image[0].path;
-        // If path is a filesystem path, convert to public URL
-        if (typeof imageUrl === 'string' && (imageUrl.includes('\\') || imageUrl.match(/^[A-Za-z]:\\/))) {
-          const filename = path.basename(imageUrl);
-          imageUrl = `/waterbackend/data/uploads/categories/${filename}`;
-        }
-        console.log('Added category image:', imageUrl);
+        console.log('Initial image path:', imageUrl);
       }
 
       // Handle video upload
       if (req.files.video && req.files.video[0]) {
         videoUrl = req.files.video[0].path;
-        if (typeof videoUrl === 'string' && (videoUrl.includes('\\') || videoUrl.match(/^[A-Za-z]:\\/))) {
-          const filename = path.basename(videoUrl);
-          videoUrl = `/waterbackend/data/uploads/categories/${filename}`;
-        }
-        console.log('Added category video:', videoUrl);
+        console.log('Initial video path:', videoUrl);
       }
     }
 
-    // Normalize URLs
-    if (imageUrl) imageUrl = formatImageUrl(imageUrl, req);
-    if (videoUrl) videoUrl = formatImageUrl(videoUrl, req);
+    // Normalize image URLs (convert filesystem paths to public URLs)
+    if (imageUrl) {
+      // If path looks like a filesystem path, convert to public waterbackend path
+      if (typeof imageUrl === 'string' && (imageUrl.includes('\\') || imageUrl.includes('/data') || imageUrl.match(/^[A-Za-z]:\\/))) {
+        const filename = path.basename(imageUrl);
+        imageUrl = `/waterbackend/data/uploads/categories/${filename}`;
+      }
+      imageUrl = formatImageUrl(imageUrl, req);
+    }
+
+    // Normalize video URLs
+    if (videoUrl) {
+      if (typeof videoUrl === 'string' && (videoUrl.includes('\\') || videoUrl.includes('/data') || videoUrl.match(/^[A-Za-z]:\\/))) {
+        const filename = path.basename(videoUrl);
+        videoUrl = `/waterbackend/data/uploads/categories/${filename}`;
+      }
+      videoUrl = formatImageUrl(videoUrl, req);
+    }
 
     const newCategory = new Category({
       name: categoryData.name,
@@ -126,19 +133,33 @@ exports.updateCategory = async (req, res) => {
       // Handle image update
       if (req.files.image && req.files.image[0]) {
         imageUrl = req.files.image[0].path;
-        console.log('Updated category image:', imageUrl);
+        console.log('Updating image, new path:', imageUrl);
       }
 
       // Handle video update
       if (req.files.video && req.files.video[0]) {
         videoUrl = req.files.video[0].path;
-        console.log('Updated category video:', videoUrl);
+        console.log('Updating video, new path:', videoUrl);
       }
     }
 
-    // Normalize URLs
-    if (imageUrl) imageUrl = formatImageUrl(imageUrl, req);
-    if (videoUrl) videoUrl = formatImageUrl(videoUrl, req);
+    // Normalize image URLs (convert filesystem paths to public URLs)
+    if (imageUrl) {
+      if (typeof imageUrl === 'string' && (imageUrl.includes('\\') || imageUrl.includes('/data') || imageUrl.match(/^[A-Za-z]:\\/))) {
+        const filename = path.basename(imageUrl);
+        imageUrl = `/waterbackend/data/uploads/categories/${filename}`;
+      }
+      imageUrl = formatImageUrl(imageUrl, req);
+    }
+
+    // Normalize video URLs
+    if (videoUrl) {
+      if (typeof videoUrl === 'string' && (videoUrl.includes('\\') || videoUrl.includes('/data') || videoUrl.match(/^[A-Za-z]:\\/))) {
+        const filename = path.basename(videoUrl);
+        videoUrl = `/waterbackend/data/uploads/categories/${filename}`;
+      }
+      videoUrl = formatImageUrl(videoUrl, req);
+    }
 
     // Update category object
     const updatedCategory = {
