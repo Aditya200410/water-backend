@@ -88,8 +88,9 @@ app.post('/api/bookings/webhook/razorpay',
 );
 // Razorpay webhook route (raw body needed for signature verification)
 
-// Use JSON parsing for all OTHER routes
-app.use(express.json());
+// Use JSON parsing for all OTHER routes with increased limit for file uploads
+app.use(express.json({ limit: '500mb' }));
+app.use(express.urlencoded({ limit: '500mb', extended: true }));
 app.use(cookieParser());
 
 // Ensure data directories exist
