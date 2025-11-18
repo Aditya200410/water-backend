@@ -116,17 +116,29 @@ const createProductWithFiles = async (req, res) => {
 
     // 3. Process uploaded videos
     const videoPaths = files.videos ? files.videos.map(video => video.path) : [];
+    
     // Normalize image URLs (convert filesystem paths to public URLs)
     for (let i = 0; i < imagePaths.length; i++) {
       const p = imagePaths[i];
       // If path looks like a filesystem path, convert to public waterbackend path
-      if (typeof p === 'string' && (p.includes('\\') || p.includes('/') && (p.includes('data') || p.match(/^[A-Za-z]:\\/)))) {
+      if (typeof p === 'string' && (p.includes('\\') || p.includes('/data') || p.match(/^[A-Za-z]:\\/))) {
         // Use the filename and map to the data static route
         const filename = path.basename(p);
         imagePaths[i] = `/waterbackend/data/uploads/products/${filename}`;
       }
       imagePaths[i] = formatImageUrl(imagePaths[i], req);
     }
+
+    // Normalize video URLs (convert filesystem paths to public URLs)
+    for (let i = 0; i < videoPaths.length; i++) {
+      const p = videoPaths[i];
+      if (typeof p === 'string' && (p.includes('\\') || p.includes('/data') || p.match(/^[A-Za-z]:\\/))) {
+        const filename = path.basename(p);
+        videoPaths[i] = `/waterbackend/data/uploads/products/${filename}`;
+      }
+      videoPaths[i] = formatImageUrl(videoPaths[i], req);
+    }
+    
     console.log('Added videos:', videoPaths);
 
     const newProduct = new Product({
@@ -236,7 +248,7 @@ const updateProductWithFiles = async (req, res) => {
     // Normalize final image URLs (handle filesystem paths)
     for (let i = 0; i < finalImagePaths.length; i++) {
       const p = finalImagePaths[i];
-      if (typeof p === 'string' && (p.includes('\\') || p.includes('/') && (p.includes('data') || p.match(/^[A-Za-z]:\\/)))) {
+      if (typeof p === 'string' && (p.includes('\\') || p.includes('/data') || p.match(/^[A-Za-z]:\\/))) {
         const filename = path.basename(p);
         finalImagePaths[i] = `/waterbackend/data/uploads/products/${filename}`;
       }
@@ -244,12 +256,27 @@ const updateProductWithFiles = async (req, res) => {
     }
     console.log('Final image array for update:', finalImagePaths);
     
-    // 4. Handle video updates (additive approach)
-    let videoPaths = existingProduct.videos || [];
+    // 4. Handle video updates (support both retained and new videos)
+    // Get the list of existing videos to keep from the frontend
+    const retainedVideoUrls = JSON.parse(productData.retainedVideoUrls || '[]');
+    console.log('Retained video URLs:', retainedVideoUrls);
+    
+    // Combine retained videos with new uploads
+    let videoPaths = [...retainedVideoUrls];
+    
     if (files.videos && files.videos.length > 0) {
-        const newVideoUrls = files.videos.map(video => video.path);
-        videoPaths = videoPaths.concat(newVideoUrls);
-        console.log('Updated video paths:', videoPaths);
+      const newVideoUrls = files.videos.map(video => video.path);
+      // Normalize new video URLs (convert filesystem paths to public URLs)
+      for (let i = 0; i < newVideoUrls.length; i++) {
+        const p = newVideoUrls[i];
+        if (typeof p === 'string' && (p.includes('\\') || p.includes('/data') || p.match(/^[A-Za-z]:\\/))) {
+          const filename = path.basename(p);
+          newVideoUrls[i] = `/waterbackend/data/uploads/products/${filename}`;
+        }
+        newVideoUrls[i] = formatImageUrl(newVideoUrls[i], req);
+      }
+      videoPaths = videoPaths.concat(newVideoUrls);
+      console.log('Updated video paths:', videoPaths);
     }
 
     const updatedProduct = {

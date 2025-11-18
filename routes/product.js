@@ -31,7 +31,12 @@ const storage = multer.diskStorage({
   }
 });
 
-const upload = multer({ storage: storage });
+const upload = multer({ 
+  storage: storage,
+  limits: {
+    fileSize: 500 * 1024 * 1024  // 500MB for videos
+  }
+});
 
 // ✅ THIS IS THE CORRECT CONFIGURATION
 const uploadHandler = upload.fields([
