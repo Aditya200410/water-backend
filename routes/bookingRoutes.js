@@ -4,6 +4,7 @@ const bookingController = require("../controllers/bookingController");
 
 router.post("/create", bookingController.createBooking);
 router.post("/verify", bookingController.verifyPayment);
+router.post("/webhook/phonepe", bookingController.phonePeWebhook);
 router.post("/mark-completed", bookingController.markPaymentCompleted);
 router.get('/email', bookingController.getOrdersByEmail);
 router.get('/user-bookings', bookingController.getBookingsByEmailOrPhone); // New route for email OR phone

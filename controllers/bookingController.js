@@ -4,8 +4,8 @@ const User = require("../models/User");
 const nodemailer = require("nodemailer");
 const crypto = require("crypto");
 const { sendWhatsAppMessage } = require("../service/whatsappService");
-const {selfWhatsAppMessage }= require("../service/whatsappself");
-const {parkWhatsAppMessage }= require("../service/whatsapppark")
+const { selfWhatsAppMessage } = require("../service/whatsappself");
+const { parkWhatsAppMessage } = require("../service/whatsapppark")
 const Counter = require("../models/Counter")
 const axios = require("axios");
 // Import PhonePe token function from phonepeController
@@ -22,7 +22,7 @@ async function getPhonePeToken() {
 
     const clientId = process.env.PHONEPE_CLIENT_ID;
     const clientSecret = process.env.PHONEPE_CLIENT_SECRET;
-    const clientVersion = '1';      
+    const clientVersion = '1';
     const env = process.env.PHONEPE_ENV || 'sandbox';
 
     if (!clientId || !clientSecret) {
@@ -31,21 +31,21 @@ async function getPhonePeToken() {
 
     // Set OAuth URL based on environment
     let oauthUrl;
-    if (env === 'production') 
+    if (env === 'production')
       oauthUrl = 'https://api.phonepe.com/apis/identity-manager/v1/oauth/token';
     else
       oauthUrl = 'https://api-preprod.phonepe.com/apis/pg-sandbox/v1/oauth/token';
-    
+
 
     console.log('[createBooking] Getting PhonePe OAuth token from:', oauthUrl);
 
-    const response = await axios.post(oauthUrl, 
+    const response = await axios.post(oauthUrl,
       new URLSearchParams({
         client_id: clientId,
         client_version: clientVersion,
         client_secret: clientSecret,
         grant_type: 'client_credentials'
-      }), 
+      }),
       {
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded'
@@ -63,7 +63,7 @@ async function getPhonePeToken() {
         // Fallback to 1 hour if expires_at is not provided
         phonePeTokenExpiry = new Date(Date.now() + 60 * 60 * 1000);
       }
-      
+
       console.log('[createBooking] PhonePe OAuth token obtained successfully');
       return phonePeOauthToken;
     } else {
@@ -86,7 +86,7 @@ async function getNextSequenceValue(sequenceName) {
         // Step 1: Set the sequence_value. If it doesn't exist (on insert), default it to 399. Otherwise, keep its current value.
         $set: {
           sequence_value: {
-            $ifNull: ["$sequence_value", 399] 
+            $ifNull: ["$sequence_value", 399]
           }
         }
       },
@@ -135,17 +135,148 @@ const sendEmail = async (to, subject, html, textFallback) => {
 
   try {
     console.log("[sendEmail] Sending email with options:", mailOptions);
-    
+
     // Add timeout to email sending
     const emailPromise = transporter.sendMail(mailOptions);
-    const timeoutPromise = new Promise((_, reject) => 
+    const timeoutPromise = new Promise((_, reject) =>
       setTimeout(() => reject(new Error('Email timeout')), 15000)
     );
-    
+
     await Promise.race([emailPromise, timeoutPromise]);
     console.log("[sendEmail] Email sent successfully.");
   } catch (error) {
     console.error("[sendEmail] Error sending email:", error);
+  }
+};
+
+// ----------------------------
+// Notification Helper
+// ----------------------------
+const sendBookingNotifications = async (booking) => {
+  console.log("[sendBookingNotifications] Starting notifications for:", booking.customBookingId);
+
+  try {
+    const notificationResults = await Promise.allSettled([
+      // Customer WhatsApp
+      sendWhatsAppMessage({
+        id: booking.waterpark.toString(),
+        waterparkName: booking.waterparkName,
+        customBookingId: booking.customBookingId,
+        customerName: booking.name,
+        customerPhone: booking.phone,
+        date: booking.date,
+        adultquantity: booking.adults,
+        childquantity: booking.children,
+        totalAmount: booking.totalAmount,
+        left: booking.leftamount,
+      }).catch(err => {
+        console.error("[sendBookingNotifications] Customer WhatsApp error:", err.message);
+        return { status: 'failed', error: err.message };
+      }),
+
+      // Self WhatsApp
+      selfWhatsAppMessage({
+        id: booking.waterpark.toString(),
+        waterparkName: booking.waterparkName,
+        customBookingId: booking.customBookingId,
+        customerName: booking.name,
+        customerPhone: booking.phone,
+        date: booking.date,
+        adultquantity: booking.adults,
+        childquantity: booking.children,
+        totalAmount: booking.totalAmount,
+        left: booking.leftamount,
+      }).catch(err => {
+        console.error("[sendBookingNotifications] Self WhatsApp error:", err.message);
+        return { status: 'failed', error: err.message };
+      }),
+
+      // Park WhatsApp
+      parkWhatsAppMessage({
+        id: booking.waterpark.toString(),
+        waterparkName: booking.waterparkName,
+        customBookingId: booking.customBookingId,
+        customerName: booking.name,
+        waternumber: booking.waternumber,
+        customerPhone: booking.phone,
+        date: booking.date,
+        adultquantity: booking.adults,
+        childquantity: booking.children,
+        totalAmount: booking.totalAmount,
+        left: booking.leftamount,
+      }).catch(err => {
+        console.error("[sendBookingNotifications] Park WhatsApp error:", err.message);
+        return { status: 'failed', error: err.message };
+      }),
+
+      // Email
+      sendEmail(
+        [booking.email, "am542062@gmail.com"],
+        `✅ Your Booking is Confirmed for ${booking.waterparkName}!`,
+        `
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>Booking Confirmation</title>
+          <style>
+            body { margin: 0; padding: 0; background-color: #f4f4f7; font-family: Arial, sans-serif; }
+            .container { max-width: 600px; margin: 20px auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; border: 1px solid #dee2e6; }
+            .header { background-color: #007bff; color: #ffffff; padding: 30px 20px; text-align: center; }
+            .header h1 { margin: 0; font-size: 28px; font-weight: bold; }
+            .content { padding: 30px; color: #333333; line-height: 1.6; }
+            .content h2 { color: #0056b3; font-size: 22px; margin-top: 0; }
+            .details-table, .payment-table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+            .details-table td, .payment-table td { padding: 12px 0; font-size: 16px; border-bottom: 1px solid #eeeeee; }
+            .details-table td:first-child { color: #555555; }
+            .details-table td:last-child, .payment-table td:last-child { text-align: right; font-weight: bold; }
+            .payment-table .total-due td { font-size: 20px; font-weight: bold; color: #d9534f; }
+            .payment-table .paid td { color: #5cb85c; }
+            .cta-button { display: block; width: 200px; margin: 30px auto; padding: 15px 20px; background-color: #007bff; color: #ffffff; text-align: center; text-decoration: none; border-radius: 8px; font-size: 16px; font-weight: bold; }
+            .footer { text-align: center; padding: 20px; font-size: 12px; color: #888888; background-color: #f8f9fa; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header"><h1>${booking.waterparkName}</h1></div>
+            <div class="content">
+              <h2>Your Booking is Confirmed!</h2>
+              <p>Hello ${booking.name}, thank you for your booking! We are excited to welcome you for a day of fun and splashes.</p>
+              <table class="details-table">
+                <tr><td>Booking ID:</td><td style="font-family: monospace;">${booking.customBookingId}</td></tr>
+                <tr><td>Visit Date:</td><td>${new Date(booking.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</td></tr>
+                <tr><td>Guests:</td><td>${booking.adults} Adult(s), ${booking.children} Child(ren)</td></tr>
+                <tr><td>Phone:</td><td>${booking.phone}</td></tr>
+              </table>
+              <h2 style="margin-top: 30px;">Payment Summary</h2>
+              <table class="payment-table">
+                <tr><td>Total Amount:</td><td>₹${booking.totalAmount.toFixed(2)}</td></tr>
+                <tr class="paid"><td>Advance Paid:</td><td>₹${booking.advanceAmount.toFixed(2)}</td></tr>
+                <tr class="total-due"><td>Amount Due at Park:</td><td>₹${booking.leftamount.toFixed(2)}</td></tr>
+              </table>
+              <a href="https://www.waterparkchalo.com/ticket?bookingId=${booking.customBookingId}" class="cta-button">View Your Ticket</a>
+              <p style="text-align: center; color: #555;">Please show the ticket at the ticket counter upon your arrival.</p>
+            </div>
+            <div class="footer">
+              <p>This is an automated email. Please do not reply.</p>
+              <p>&copy; ${new Date().getFullYear()} ${booking.waterparkName}. All rights reserved.</p>
+            </div>
+          </div>
+        </body>
+        </html>
+        `
+      ).catch(err => {
+        console.error("[sendBookingNotifications] Email error:", err.message);
+        return { status: 'failed', error: err.message };
+      })
+    ]);
+
+    console.log("[sendBookingNotifications] All notifications completed:", notificationResults.map(r => r.status));
+    return notificationResults;
+  } catch (error) {
+    console.error("[sendBookingNotifications] Error in notifications:", error);
+    throw error;
   }
 };
 
@@ -236,16 +367,16 @@ exports.createBooking = async (req, res) => {
         .json({ success: false, message: "Invalid amounts" });
     }
 
-   // ✅ START: CORRECTED BOOKING ID GENERATION
-console.log("[createBooking] Generating custom booking ID for:", waterparkName);
+    // ✅ START: CORRECTED BOOKING ID GENERATION
+    console.log("[createBooking] Generating custom booking ID for:", waterparkName);
 
-// ✅ 3. REPLACE YOUR OLD ID LOGIC WITH THIS
+    // ✅ 3. REPLACE YOUR OLD ID LOGIC WITH THIS
     // Sanitize park name to use as the counter's name
     const parkPrefix = "waterparkchalo";
-    
+
     // Get the next unique number for this park from our atomic counter
     const bookingNumber = await getNextSequenceValue(parkPrefix);
-    
+
     // Create the final, unique booking ID
     const customBookingId = `${parkPrefix}${bookingNumber}`;
     console.log("[createBooking] Generated Atomic Custom ID:", customBookingId);
@@ -286,56 +417,56 @@ console.log("[createBooking] Generating custom booking ID for:", waterparkName);
     console.log("[createBooking] Booking saved with custom ID:", booking.customBookingId);
 
     if (paymentType === "cash") {
-        console.log(
-            "[createBooking] Cash payment flow, sending notifications in parallel."
-        );
-      
-        
-      
-        // Send all notifications in parallel for faster response
-        const notificationPromises = [
-          selfWhatsAppMessage({
-            id: booking.waterpark.toString(),
-            waterparkName: booking.waterparkName,
-            customBookingId: booking.customBookingId,
-            customerName: booking.name,
-            customerPhone: booking.phone,
-            date: booking.date,
-            adultquantity: booking.adults,
-            childquantity: booking.children,
-            totalAmount: booking.totalAmount,
-            left: booking.leftamount,
-          }).catch(err => console.error("[createBooking] Self WhatsApp error:", err.message)),
+      console.log(
+        "[createBooking] Cash payment flow, sending notifications in parallel."
+      );
 
-          parkWhatsAppMessage({
-            id: booking.waterpark.toString(),
-            waterparkName: booking.waterparkName,
-            customBookingId: booking.customBookingId,
-            customerName: booking.name,
-            waternumber: booking.waternumber,
-            customerPhone: booking.phone,
-            date: booking.date,
-            adultquantity: booking.adults,
-            childquantity: booking.children,
-            totalAmount: booking.totalAmount,
-            left: booking.leftamount,
-          }).catch(err => console.error("[createBooking] Park WhatsApp error:", err.message))
-        ];
 
-        // Don't wait for notifications to complete - respond immediately
-        Promise.allSettled(notificationPromises).then(results => {
-          console.log("[createBooking] All notifications completed:", results.map(r => r.status));
-        });
 
-        return res
-            .status(201)
-            .json({ success: true, message: "Booking created successfully", booking });
+      // Send all notifications in parallel for faster response
+      const notificationPromises = [
+        selfWhatsAppMessage({
+          id: booking.waterpark.toString(),
+          waterparkName: booking.waterparkName,
+          customBookingId: booking.customBookingId,
+          customerName: booking.name,
+          customerPhone: booking.phone,
+          date: booking.date,
+          adultquantity: booking.adults,
+          childquantity: booking.children,
+          totalAmount: booking.totalAmount,
+          left: booking.leftamount,
+        }).catch(err => console.error("[createBooking] Self WhatsApp error:", err.message)),
+
+        parkWhatsAppMessage({
+          id: booking.waterpark.toString(),
+          waterparkName: booking.waterparkName,
+          customBookingId: booking.customBookingId,
+          customerName: booking.name,
+          waternumber: booking.waternumber,
+          customerPhone: booking.phone,
+          date: booking.date,
+          adultquantity: booking.adults,
+          childquantity: booking.children,
+          totalAmount: booking.totalAmount,
+          left: booking.leftamount,
+        }).catch(err => console.error("[createBooking] Park WhatsApp error:", err.message))
+      ];
+
+      // Don't wait for notifications to complete - respond immediately
+      Promise.allSettled(notificationPromises).then(results => {
+        console.log("[createBooking] All notifications completed:", results.map(r => r.status));
+      });
+
+      return res
+        .status(201)
+        .json({ success: true, message: "Booking created successfully", booking });
     }
 
     // ✅ PhonePe Payment
     if (paymentMethod === "phonepe") {
       console.log("[createBooking] Creating PhonePe order for booking:", booking.customBookingId);
-      
+
       try {
         // Get OAuth token
         const accessToken = await getPhonePeToken();
@@ -344,7 +475,7 @@ console.log("[createBooking] Generating custom booking ID for:", waterparkName);
         const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
 
         // Set base URL for payment API
-        const baseUrl = env === 'production' 
+        const baseUrl = env === 'production'
           ? 'https://api.phonepe.com/apis/pg'
           : 'https://api-preprod.phonepe.com/apis/pg-sandbox';
 
@@ -376,7 +507,7 @@ console.log("[createBooking] Generating custom booking ID for:", waterparkName);
         };
 
         console.log('[createBooking] Making PhonePe API request to:', baseUrl + apiEndpoint);
-        
+
         const response = await axios.post(
           baseUrl + apiEndpoint,
           payload,
@@ -412,8 +543,8 @@ console.log("[createBooking] Generating custom booking ID for:", waterparkName);
           });
         } else {
           console.error('[createBooking] PhonePe did not return redirect URL:', response.data);
-          return res.status(500).json({ 
-            success: false, 
+          return res.status(500).json({
+            success: false,
             message: 'PhonePe did not return a redirect URL.',
             booking
           });
@@ -432,11 +563,11 @@ console.log("[createBooking] Generating custom booking ID for:", waterparkName);
     console.error("[createBooking] Error:", error);
     // Handle potential duplicate key error for customBookingId
     if (error.code === 11000) {
-        return res.status(500).json({
-            success: false,
-            message: "Error creating booking: A booking ID conflict occurred. Please try again.",
-            error: error.message,
-        });
+      return res.status(500).json({
+        success: false,
+        message: "Error creating booking: A booking ID conflict occurred. Please try again.",
+        error: error.message,
+      });
     }
     return res
       .status(500)
@@ -482,13 +613,13 @@ exports.verifyPayment = async (req, res) => {
     try {
       const accessToken = await getPhonePeToken();
       const env = process.env.PHONEPE_ENV || 'sandbox';
-      const baseUrl = env === 'production' 
+      const baseUrl = env === 'production'
         ? 'https://api.phonepe.com/apis/pg'
         : 'https://api-preprod.phonepe.com/apis/pg-sandbox';
       const apiEndpoint = `/checkout/v2/order/${orderId}/status`;
-      
+
       console.log(`[verifyPayment] Checking PhonePe status for orderId: ${orderId}`);
-      
+
       const statusResponse = await axios.get(
         baseUrl + apiEndpoint,
         {
@@ -507,7 +638,7 @@ exports.verifyPayment = async (req, res) => {
         booking.paymentStatus = "Completed";
         booking.paymentType = "PhonePe";
         booking.paymentId = orderId;
-        
+
         // Save booking with validation
         try {
           await booking.save();
@@ -521,7 +652,7 @@ exports.verifyPayment = async (req, res) => {
             "Payment ID:",
             booking.paymentId
           );
-          
+
           // Verify the save was successful by fetching the booking again
           const savedBooking = await Booking.findOne({ customBookingId: booking.customBookingId });
           if (savedBooking && savedBooking.paymentStatus === "Completed") {
@@ -540,227 +671,11 @@ exports.verifyPayment = async (req, res) => {
 
         // ✅ Send all notifications in parallel for faster response
         console.log("[verifyPayment] Sending notifications in parallel...");
-        
+
         // Send notifications in background (don't block response)
-        (async () => {
-          try {
-            console.log("[verifyPayment] Starting background notifications for:", booking.customBookingId);
-            
-            const notificationResults = await Promise.allSettled([
-              // Customer WhatsApp
-              sendWhatsAppMessage({
-                id: booking.waterpark.toString(),
-                waterparkName: booking.waterparkName,
-                customBookingId: booking.customBookingId,
-                customerName: booking.name,
-                customerPhone: booking.phone,
-                date: booking.date,
-                adultquantity: booking.adults,
-                childquantity: booking.children,
-                totalAmount: booking.totalAmount,
-                left: booking.leftamount,
-              }).catch(err => {
-                console.error("[verifyPayment] Customer WhatsApp error:", err.message);
-                return { status: 'failed', error: err.message };
-              }),
-              
-              // Self WhatsApp
-              selfWhatsAppMessage({
-                id: booking.waterpark.toString(),
-                waterparkName: booking.waterparkName,
-                customBookingId: booking.customBookingId,
-                customerName: booking.name,
-                customerPhone: booking.phone,
-                date: booking.date,
-                adultquantity: booking.adults,
-                childquantity: booking.children,
-                totalAmount: booking.totalAmount,
-                left: booking.leftamount,
-              }).catch(err => {
-                console.error("[verifyPayment] Self WhatsApp error:", err.message);
-                return { status: 'failed', error: err.message };
-              }),
-
-              // Park WhatsApp
-              parkWhatsAppMessage({
-                id: booking.waterpark.toString(),
-                waterparkName: booking.waterparkName,
-                customBookingId: booking.customBookingId,
-                customerName: booking.name,
-                waternumber: booking.waternumber,
-                customerPhone: booking.phone,
-                date: booking.date,
-                adultquantity: booking.adults,
-                childquantity: booking.children,
-                totalAmount: booking.totalAmount,
-                left: booking.leftamount,
-              }).catch(err => {
-                console.error("[verifyPayment] Park WhatsApp error:", err.message);
-                return { status: 'failed', error: err.message };
-              }),
-
-              // Email
-              sendEmail(
-                [booking.email, "am542062@gmail.com"],
-                `✅ Your Booking is Confirmed for ${booking.waterparkName}!`,
-                `
-                <!DOCTYPE html>
-                <html lang="en">
-                <head>
-                  <meta charset="UTF-8">
-                  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                  <title>Booking Confirmation</title>
-                  <style>
-                    body {
-                      margin: 0;
-                      padding: 0;
-                      background-color: #f4f4f7;
-                      font-family: Arial, sans-serif;
-                    }
-                    .container {
-                      max-width: 600px;
-                      margin: 20px auto;
-                      background-color: #ffffff;
-                      border-radius: 12px;
-                      overflow: hidden;
-                      border: 1px solid #dee2e6;
-                    }
-                    .header {
-                      background-color: #007bff;
-                      color: #ffffff;
-                      padding: 30px 20px;
-                      text-align: center;
-                    }
-                    .header h1 {
-                      margin: 0;
-                      font-size: 28px;
-                      font-weight: bold;
-                    }
-                    .content {
-                      padding: 30px;
-                      color: #333333;
-                      line-height: 1.6;
-                    }
-                    .content h2 {
-                      color: #0056b3;
-                      font-size: 22px;
-                      margin-top: 0;
-                    }
-                    .details-table, .payment-table {
-                      width: 100%;
-                      border-collapse: collapse;
-                      margin-top: 20px;
-                    }
-                    .details-table td, .payment-table td {
-                      padding: 12px 0;
-                      font-size: 16px;
-                      border-bottom: 1px solid #eeeeee;
-                    }
-                    .details-table td:first-child {
-                      color: #555555;
-                    }
-                    .details-table td:last-child, .payment-table td:last-child {
-                      text-align: right;
-                      font-weight: bold;
-                    }
-                    .payment-table .total-due td {
-                      font-size: 20px;
-                      font-weight: bold;
-                      color: #d9534f;
-                    }
-                    .payment-table .paid td {
-                      color: #5cb85c;
-                    }
-                    .cta-button {
-                      display: block;
-                      width: 200px;
-                      margin: 30px auto;
-                      padding: 15px 20px;
-                      background-color: #007bff;
-                      color: #ffffff;
-                      text-align: center;
-                      text-decoration: none;
-                      border-radius: 8px;
-                      font-size: 16px;
-                      font-weight: bold;
-                    }
-                    .footer {
-                      text-align: center;
-                      padding: 20px;
-                      font-size: 12px;
-                      color: #888888;
-                      background-color: #f8f9fa;
-                    }
-                  </style>
-                </head>
-                <body>
-                  <div class="container">
-                    <div class="header">
-                      <h1>${booking.waterparkName}</h1>
-                    </div>
-                    <div class="content">
-                      <h2>Your Booking is Confirmed!</h2>
-                      <p>Hello ${booking.name}, thank you for your booking! We are excited to welcome you for a day of fun and splashes. Please find your booking details below.</p>
-
-                      <table class="details-table">
-                        <tr>
-                          <td>Booking ID:</td>
-                          <td style="font-family: monospace;">${booking.customBookingId}</td>
-                        </tr>
-                        <tr>
-                          <td>Visit Date:</td>
-                          <td>${new Date(booking.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</td>
-                        </tr>
-                        <tr>
-                          <td>Guests:</td>
-                          <td>${booking.adults} Adult(s), ${booking.children} Child(ren)</td>
-                        </tr>
-                         <tr>
-                          <td>Phone:</td>
-                          <td>${booking.phone}</td>
-                        </tr>
-                      </table>
-
-                      <h2 style="margin-top: 30px;">Payment Summary</h2>
-                      <table class="payment-table">
-                        <tr>
-                          <td>Total Amount:</td>
-                          <td>₹${booking.totalAmount.toFixed(2)}</td>
-                        </tr>
-                        <tr class="paid">
-                          <td>Advance Paid:</td>
-                          <td>₹${booking.advanceAmount.toFixed(2)}</td>
-                        </tr>
-                        <tr class="total-due">
-                          <td>Amount Due at Park:</td>
-                          <td>₹${booking.leftamount.toFixed(2)}</td>
-                        </tr>
-                      </table>
-                      
-                      <a href="https://www.waterparkchalo.com/ticket?bookingId=${booking.customBookingId}" class="cta-button" style="color: #ffffff;">View Your Ticket</a>
-                      
-                      <p style="text-align: center; color: #555;">Please show the ticket at the ticket counter upon your arrival.</p>
-                    </div>
-                    <div class="footer">
-                      <p>This is an automated email. Please do not reply.</p>
-                      <p>&copy; ${new Date().getFullYear()} ${booking.waterparkName}. All rights reserved.</p>
-                    </div>
-                  </div>
-                </body>
-                </html>
-                `
-              ).catch(err => {
-                console.error("[verifyPayment] Email error:", err.message);
-                return { status: 'failed', error: err.message };
-              })
-            ]);
-
-            console.log("[verifyPayment] All notifications completed:", notificationResults.map(r => r.status));
-            console.log("[verifyPayment] Notification results:", notificationResults);
-          } catch (error) {
-            console.error("[verifyPayment] Error in background notifications:", error);
-          }
-        })();
+        sendBookingNotifications(booking).catch(err =>
+          console.error("[verifyPayment] Background notification error:", err)
+        );
 
         return res
           .status(200)
@@ -775,8 +690,8 @@ exports.verifyPayment = async (req, res) => {
         console.log("[verifyPayment] Payment failed for booking:", bookingId);
         return res
           .status(400)
-          .json({ 
-            success: false, 
+          .json({
+            success: false,
             message: "Payment failed",
             errorCode: statusResponse.data.errorCode,
             detailedErrorCode: statusResponse.data.detailedErrorCode
@@ -786,8 +701,8 @@ exports.verifyPayment = async (req, res) => {
         console.log("[verifyPayment] Payment pending for booking:", bookingId);
         return res
           .status(200)
-          .json({ 
-            success: false, 
+          .json({
+            success: false,
             message: "Payment is pending",
             state: statusResponse.data?.state || 'PENDING'
           });
@@ -796,9 +711,9 @@ exports.verifyPayment = async (req, res) => {
       console.error("[verifyPayment] PhonePe status check error:", statusError);
       return res
         .status(500)
-        .json({ 
-          success: false, 
-          message: "Failed to verify payment with PhonePe",
+        .json({
+          success: false,
+          message: "Failed to verify payment status",
           error: statusError.message
         });
     }
@@ -806,7 +721,107 @@ exports.verifyPayment = async (req, res) => {
     console.error("[verifyPayment] Error:", error);
     return res
       .status(500)
-      .json({ success: false, message: "Error verifying payment." });
+      .json({ success: false, message: "Error verifying payment.", error: error.message });
+  }
+};
+
+// ----------------------------
+// PhonePe Webhook
+// ----------------------------
+exports.phonePeWebhook = async (req, res) => {
+  console.log("[phonePeWebhook] Received webhook callback");
+
+  try {
+    // 1. Verify Authorization Header
+    // Format: SHA256(username:password)
+    const authHeader = req.headers['authorization'];
+
+    if (!authHeader) {
+      console.warn("[phonePeWebhook] Missing Authorization header");
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    const webhookUsername = process.env.PHONEPE_WEBHOOK_USERNAME;
+    const webhookPassword = process.env.PHONEPE_WEBHOOK_PASSWORD;
+
+    if (!webhookUsername || !webhookPassword) {
+      console.error("[phonePeWebhook] Webhook credentials not configured");
+      return res.status(500).json({ success: false, message: "Server configuration error" });
+    }
+
+    // Calculate expected hash
+    const expectedHash = crypto.createHash('sha256')
+      .update(`${webhookUsername}:${webhookPassword}`)
+      .digest('hex');
+
+    // Check if it matches (case-insensitive check is safer for hex)
+    if (authHeader.toLowerCase() !== expectedHash.toLowerCase()) {
+      console.warn("[phonePeWebhook] Invalid Authorization header");
+      console.warn(`[phonePeWebhook] Expected: ${expectedHash}, Got: ${authHeader}`);
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    // 2. Parse Payload
+    // The payload is NOT base64 encoded in the new dashboard webhook
+    const { event, payload } = req.body;
+    console.log("[phonePeWebhook] Event:", event);
+    console.log("[phonePeWebhook] Payload:", JSON.stringify(payload, null, 2));
+
+    if (!event || !payload) {
+      return res.status(400).json({ success: false, message: "Invalid payload structure" });
+    }
+
+    // 3. Handle Events
+    if (event === 'checkout.order.completed') {
+      const { merchantOrderId, transactionId, state } = payload;
+
+      console.log(`[phonePeWebhook] Processing completed order: ${merchantOrderId}`);
+
+      if (state !== 'COMPLETED') {
+        console.log(`[phonePeWebhook] Order state is ${state}, ignoring.`);
+        return res.status(200).json({ success: true, message: "Ignored non-completed state" });
+      }
+
+      // Find booking
+      const booking = await Booking.findOne({ phonepeMerchantOrderId: merchantOrderId });
+
+      if (!booking) {
+        console.warn(`[phonePeWebhook] Booking not found for Merchant Order ID: ${merchantOrderId}`);
+        return res.status(404).json({ success: false, message: "Booking not found" });
+      }
+
+      if (booking.paymentStatus === 'Completed') {
+        console.log(`[phonePeWebhook] Booking ${booking.customBookingId} already marked as completed`);
+        return res.status(200).json({ success: true, message: "Already processed" });
+      }
+
+      // Update Booking
+      booking.paymentStatus = "Completed";
+      booking.paymentType = "PhonePe";
+      booking.paymentId = transactionId || merchantOrderId;
+
+      await booking.save();
+      console.log(`[phonePeWebhook] Updated booking ${booking.customBookingId} status to Completed`);
+
+      // Send Notifications
+      sendBookingNotifications(booking).catch(err =>
+        console.error("[phonePeWebhook] Notification error:", err)
+      );
+
+      return res.status(200).json({ success: true, message: "Webhook processed successfully" });
+
+    } else if (event === 'checkout.order.failed') {
+      console.log(`[phonePeWebhook] Payment failed for order: ${payload.merchantOrderId}`);
+      // Optionally handle failure
+      return res.status(200).json({ success: true, message: "Payment failed event received" });
+    } else {
+      console.log(`[phonePeWebhook] Unhandled event type: ${event}`);
+      return res.status(200).json({ success: true, message: "Event ignored" });
+    }
+
+  } catch (error) {
+    console.error("[phonePeWebhook] Error processing webhook:", error);
+    return res.status(500).json({ success: false, message: "Internal server error" });
   }
 };
 
@@ -894,12 +909,12 @@ exports.markPaymentCompleted = async (req, res) => {
 
     // ✅ Send all notifications in parallel for faster response
     console.log("[markPaymentCompleted] Sending notifications in parallel...");
-    
+
     // Send notifications in background (don't block response)
     (async () => {
       try {
         console.log("[markPaymentCompleted] Starting background notifications for:", booking.customBookingId);
-        
+
         const notificationResults = await Promise.allSettled([
           // Customer WhatsApp
           sendWhatsAppMessage({
@@ -917,7 +932,7 @@ exports.markPaymentCompleted = async (req, res) => {
             console.error("[markPaymentCompleted] Customer WhatsApp error:", err.message);
             return { status: 'failed', error: err.message };
           }),
-          
+
           // Self WhatsApp
           selfWhatsAppMessage({
             id: booking.waterpark.toString(),
@@ -1168,7 +1183,7 @@ exports.getSingleBooking = async (req, res) => {
 
   try {
     const { customBookingId } = req.params;
-     const booking = await Booking.findOne({ customBookingId: customBookingId , paymentStatus: "Completed" });
+    const booking = await Booking.findOne({ customBookingId: customBookingId, paymentStatus: "Completed" });
     if (!booking) {
       console.warn("[getSingleBooking] Booking not found:", customBookingId);
       return res
@@ -1196,25 +1211,25 @@ exports.getBookingStatus = async (req, res) => {
   try {
     const { customBookingId } = req.params;
     console.log("[getBookingStatus] Looking up booking with customBookingId:", customBookingId);
-    
+
     const booking = await Booking.findOne({ customBookingId: customBookingId });
-    
+
     if (!booking) {
       console.warn("[getBookingStatus] ❌ Booking not found for customBookingId:", customBookingId);
       return res
         .status(404)
         .json({ success: false, message: "Booking not found." });
     }
-    
+
     console.log("[getBookingStatus] ✅ Booking found!");
     console.log("  - Custom Booking ID:", booking.customBookingId);
     console.log("  - Payment Status:", booking.paymentStatus);
     console.log("  - Payment ID:", booking.paymentId || "N/A");
     console.log("  - Booking Date:", booking.bookingDate);
     console.log("  - Database _id:", booking._id);
-    
-    return res.status(200).json({ 
-      success: true, 
+
+    return res.status(200).json({
+      success: true,
       booking: {
         customBookingId: booking.customBookingId,
         paymentStatus: booking.paymentStatus,
@@ -1247,10 +1262,10 @@ exports.getOrdersByEmail = async (req, res) => {
     const orders = await Booking.find({
       email: { $regex: new RegExp(`^${userEmail}$`, "i") },
     })
-    .sort({ 
-      paymentStatus: -1, // Completed first
-      bookingDate: -1 
-    });
+      .sort({
+        paymentStatus: -1, // Completed first
+        bookingDate: -1
+      });
 
     const completedCount = orders.filter(o => o.paymentStatus === "Completed").length;
     console.log(`[getOrdersByEmail] Found ${orders.length} bookings for email: ${userEmail}`);
@@ -1273,13 +1288,13 @@ exports.getOrdersByEmail = async (req, res) => {
 exports.getBookingsByEmailOrPhone = async (req, res) => {
   try {
     const { email, phone } = req.query;
-    
+
     if (!email && !phone) {
       return res
         .status(400)
-        .json({ 
-          success: false, 
-          message: "Either email or phone query parameter is required." 
+        .json({
+          success: false,
+          message: "Either email or phone query parameter is required."
         });
     }
 
@@ -1305,10 +1320,10 @@ exports.getBookingsByEmailOrPhone = async (req, res) => {
 
     const bookings = await Booking.find(query).sort({ bookingDate: -1 });
 
-    res.status(200).json({ 
-      success: true, 
+    res.status(200).json({
+      success: true,
       bookings,
-      count: bookings.length 
+      count: bookings.length
     });
   } catch (error) {
     console.error("Error fetching bookings by email or phone:", error);
@@ -1332,8 +1347,8 @@ exports.getAllBookings = async (req, res) => {
   console.log("[getAllBookings] Fetching all bookings...");
   try {
     // ✅ FIX: Changed findOne to find to get an array of all matching bookings
-    const bookings = await Booking.find({ paymentStatus: "Completed"  });
-    
+    const bookings = await Booking.find({ paymentStatus: "Completed" });
+
     // Now bookings.length will correctly report the number of documents found
     console.log("[getAllBookings] Total bookings found:", bookings.length);
     return res.status(200).json(bookings);
@@ -1381,11 +1396,11 @@ exports.getUserBookings = async (req, res) => {
 
     console.log("[getUserBookings] Querying bookings with:", query);
     const bookings = await Booking.find(query)
-      .sort({ 
+      .sort({
         paymentStatus: -1, // Completed first
-        bookingDate: -1 
+        bookingDate: -1
       });
-    
+
     const completedCount = bookings.filter(b => b.paymentStatus === "Completed").length;
     console.log("[getUserBookings] Bookings found:", bookings.length, `(Completed: ${completedCount})`);
 
@@ -1413,13 +1428,13 @@ exports.getBookingWithTicket = async (req, res) => {
 
   try {
     const { customBookingId } = req.params;
-    
+
     // Find the booking with completed payment
-    const booking = await Booking.findOne({ 
+    const booking = await Booking.findOne({
       customBookingId: customBookingId,
-      paymentStatus: "Completed" 
+      paymentStatus: "Completed"
     });
-    
+
     if (!booking) {
       console.warn("[getBookingWithTicket] Booking not found or not completed:", customBookingId);
       return res
@@ -1430,8 +1445,8 @@ exports.getBookingWithTicket = async (req, res) => {
     console.log("[getBookingWithTicket] Booking found:", booking.customBookingId);
 
     // Return booking without ticket information (tickets generated on-demand)
-    return res.status(200).json({ 
-      success: true, 
+    return res.status(200).json({
+      success: true,
       booking,
       ticket: null // No ticket storage - generated on-demand
     });
@@ -1458,10 +1473,10 @@ exports.razorpayWebhook = async (req, res) => {
     console.log("[razorpayWebhook] Step 1: Parsing raw body...");
     const rawBody = req.body.toString("utf8");
     console.log("[razorpayWebhook] Raw body length:", rawBody.length, "bytes");
-    
+
     const webhookData = JSON.parse(rawBody);
     const { event, payload } = webhookData;
-    
+
     console.log("[razorpayWebhook] ✅ Parsed webhook data successfully");
     console.log("[razorpayWebhook] Event type:", event);
     console.log("[razorpayWebhook] Payload keys:", Object.keys(payload || {}));
@@ -1535,10 +1550,10 @@ exports.razorpayWebhook = async (req, res) => {
       console.log("  📝 Order ID:", orderEntity.id);
       console.log("[razorpayWebhook] 🔍 DIAGNOSTIC - Payment Notes:");
       console.log(JSON.stringify(paymentEntity.notes, null, 2));
-      
+
       let existingBooking = null;
       let searchMethod = "";
-      
+
       // Strategy 1: Try to find by receipt (_id)
       if (orderEntity.receipt) {
         console.log("[razorpayWebhook] Strategy 1: Trying to find by receipt (_id):", orderEntity.receipt);
@@ -1552,7 +1567,7 @@ exports.razorpayWebhook = async (req, res) => {
           console.log("[razorpayWebhook] Receipt is not a valid ObjectId, trying other methods...");
         }
       }
-      
+
       // Strategy 2: Try to find by customBookingId from notes
       if (!existingBooking && paymentEntity.notes?.customBookingId) {
         console.log("[razorpayWebhook] Strategy 2: Trying to find by customBookingId from notes:", paymentEntity.notes.customBookingId);
@@ -1562,7 +1577,7 @@ exports.razorpayWebhook = async (req, res) => {
           console.log("[razorpayWebhook] ✅ Found booking by customBookingId!");
         }
       }
-      
+
       // Strategy 3: Try to find by bookingId from notes
       if (!existingBooking && paymentEntity.notes?.bookingId) {
         console.log("[razorpayWebhook] Strategy 3: Trying to find by bookingId from notes:", paymentEntity.notes.bookingId);
@@ -1576,7 +1591,7 @@ exports.razorpayWebhook = async (req, res) => {
           console.log("[razorpayWebhook] bookingId from notes is not a valid ObjectId");
         }
       }
-      
+
       // Strategy 4: Try to find by order_id
       if (!existingBooking) {
         console.log("[razorpayWebhook] Strategy 4: Trying to find by Razorpay order_id:", orderEntity.id);
@@ -1586,7 +1601,7 @@ exports.razorpayWebhook = async (req, res) => {
           console.log("[razorpayWebhook] ✅ Found booking by razorpayOrderId!");
         }
       }
-      
+
       if (!existingBooking) {
         console.error("[razorpayWebhook] ❌ BOOKING NOT FOUND USING ANY METHOD!");
         console.log("[razorpayWebhook] Attempted searches:");
@@ -1594,30 +1609,30 @@ exports.razorpayWebhook = async (req, res) => {
         console.log("  2. By customBookingId:", paymentEntity.notes?.customBookingId || "N/A");
         console.log("  3. By bookingId from notes:", paymentEntity.notes?.bookingId || "N/A");
         console.log("  4. By razorpayOrderId:", orderEntity.id);
-        
+
         // 🔍 DIAGNOSTIC: Check if ANY bookings exist
         console.log("\n[razorpayWebhook] 🔍 DIAGNOSTIC - Checking database:");
         try {
           const totalBookings = await Booking.countDocuments();
           console.log("  📊 Total bookings in database:", totalBookings);
-          
+
           // Try to find recent bookings
           const recentBookings = await Booking.find()
             .sort({ bookingDate: -1 })
             .limit(5)
             .select('_id customBookingId razorpayOrderId paymentStatus');
-          
+
           console.log("  📊 Recent bookings:");
           recentBookings.forEach((b, i) => {
             console.log(`    ${i + 1}. _id: ${b._id}, customId: ${b.customBookingId}, razorpayOrderId: ${b.razorpayOrderId || 'N/A'}, status: ${b.paymentStatus}`);
           });
-          
+
           // Try searching with the customBookingId if it exists in notes
           if (paymentEntity.notes?.customBookingId) {
-            const bookingByCustomId = await Booking.findOne({ 
-              customBookingId: paymentEntity.notes.customBookingId 
+            const bookingByCustomId = await Booking.findOne({
+              customBookingId: paymentEntity.notes.customBookingId
             }).select('_id customBookingId razorpayOrderId paymentStatus');
-            
+
             if (bookingByCustomId) {
               console.log("\n  ⚠️ IMPORTANT: Found booking by customBookingId but not by other methods!");
               console.log("  📋 Booking details:");
@@ -1633,7 +1648,7 @@ exports.razorpayWebhook = async (req, res) => {
         } catch (dbError) {
           console.error("  ❌ Database diagnostic error:", dbError.message);
         }
-        
+
         console.log("\n[razorpayWebhook] This could mean:");
         console.log("  1. The booking was deleted");
         console.log("  2. The order receipt doesn't match any booking _id");
@@ -1655,20 +1670,20 @@ exports.razorpayWebhook = async (req, res) => {
       // Check if already completed
       if (existingBooking.paymentStatus === "Completed") {
         console.log("[razorpayWebhook] ℹ️ Booking already confirmed, skipping update");
-        return res.status(200).json({ 
-          success: true, 
+        return res.status(200).json({
+          success: true,
           message: "Booking already confirmed",
-          bookingId: existingBooking.customBookingId 
+          bookingId: existingBooking.customBookingId
         });
       }
 
       // ✅ Step 6: Update booking atomically (prevents duplicate updates)
       console.log("\n[razorpayWebhook] Step 6: Updating booking status to 'Completed' atomically...");
       const oldStatus = existingBooking.paymentStatus;
-      
+
       // Use findOneAndUpdate with conditions to prevent race conditions
       const booking = await Booking.findOneAndUpdate(
-        { 
+        {
           _id: orderEntity.receipt,
           paymentStatus: { $ne: "Completed" } // Only update if NOT already Completed
         },
@@ -1679,21 +1694,21 @@ exports.razorpayWebhook = async (req, res) => {
             paymentType: "Razorpay"
           }
         },
-        { 
+        {
           new: true, // Return updated document
           runValidators: true // Run model validators
         }
       );
-      
+
       if (!booking) {
         console.log("[razorpayWebhook] ℹ️ Booking was already updated (race condition avoided)");
-        return res.status(200).json({ 
-          success: true, 
+        return res.status(200).json({
+          success: true,
           message: "Booking already confirmed",
-          bookingId: existingBooking.customBookingId 
+          bookingId: existingBooking.customBookingId
         });
       }
-      
+
       console.log("[razorpayWebhook] ✅ BOOKING UPDATED SUCCESSFULLY!");
       console.log("  - Status changed from:", oldStatus, "→", booking.paymentStatus);
       console.log("  - Payment ID:", booking.paymentId);
@@ -1706,7 +1721,7 @@ exports.razorpayWebhook = async (req, res) => {
       console.log("\n[razorpayWebhook] Step 7: Sending success response to Razorpay");
       const processingTime = Date.now() - startTime;
       console.log("[razorpayWebhook] Total processing time:", processingTime, "ms");
-      
+
       res.status(200).json({
         success: true,
         message: "Payment processed successfully",
@@ -1718,11 +1733,11 @@ exports.razorpayWebhook = async (req, res) => {
       // ✅ Step 8: Send notifications in background (non-blocking)
       console.log("\n[razorpayWebhook] Step 8: Sending notifications in background...");
       console.log("=".repeat(80) + "\n");
-      
+
       (async () => {
         try {
           console.log("[razorpayWebhook] Starting background notifications for:", booking.customBookingId);
-          
+
           const notificationResults = await Promise.allSettled([
             sendWhatsAppMessage({
               id: booking.waterpark.toString(),
@@ -1771,9 +1786,9 @@ exports.razorpayWebhook = async (req, res) => {
               return { status: 'failed', error: err.message };
             }),
             sendEmail(
-          [booking.email, "am542062@gmail.com"],
-          `✅ Your Booking is Confirmed for ${booking.waterparkName}!`,
-          `
+              [booking.email, "am542062@gmail.com"],
+              `✅ Your Booking is Confirmed for ${booking.waterparkName}!`,
+              `
           <!DOCTYPE html>
           <html lang="en">
           <head>
@@ -1919,12 +1934,12 @@ exports.razorpayWebhook = async (req, res) => {
           </body>
           </html>
           `
-        ).catch(err => {
+            ).catch(err => {
               console.error("[razorpayWebhook] Email error:", err.message);
               return { status: 'failed', error: err.message };
             })
           ]);
-          
+
           // Log notification results
           console.log("[razorpayWebhook] ✅ All notifications completed");
           console.log("[razorpayWebhook] Notification results:");
@@ -1956,7 +1971,7 @@ exports.razorpayWebhook = async (req, res) => {
     console.error("[razorpayWebhook] Error message:", error.message);
     console.error("[razorpayWebhook] Error stack:", error.stack);
     console.error("=".repeat(80) + "\n");
-    
+
     return res.status(500).json({
       success: false,
       message: "Webhook processing failed",
@@ -2022,7 +2037,7 @@ exports.testWebhook = async (req, res) => {
   console.log("[testWebhook] Request body:", JSON.stringify(req.body, null, 2));
   console.log("[testWebhook] Headers:", JSON.stringify(req.headers, null, 2));
   console.log("=".repeat(80) + "\n");
-  
+
   try {
     const diagnostics = {
       success: true,
@@ -2050,7 +2065,7 @@ exports.testWebhook = async (req, res) => {
     };
 
     console.log("[testWebhook] Diagnostics:", JSON.stringify(diagnostics, null, 2));
-    
+
     return res.status(200).json(diagnostics);
   } catch (error) {
     console.error("[testWebhook] ❌ Error:", error);
