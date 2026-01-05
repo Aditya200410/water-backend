@@ -864,6 +864,54 @@ exports.markPaymentCompleted = async (req, res) => {
       });
     }
 
+    // ✅ Security: Verify actual status with PhonePe before marking as completed
+    try {
+      console.log(`[markPaymentCompleted] Verifying payment status with PhonePe for booking: ${bookingId}`);
+
+      // Use the stored phonepeOrderId if available, otherwise fallback to merchantOrderId from request
+      const checkId = booking.phonepeOrderId || orderId || merchantOrderId;
+
+      if (!checkId) {
+        return res.status(400).json({ success: false, message: "Transaction ID required for verification" });
+      }
+
+      const accessToken = await getPhonePeToken();
+      const env = process.env.PHONEPE_ENV || 'sandbox';
+      const baseUrl = env === 'production'
+        ? 'https://api.phonepe.com/apis/pg'
+        : 'https://api-preprod.phonepe.com/apis/pg-sandbox';
+      const apiEndpoint = `/checkout/v2/order/${checkId}/status`;
+
+      const statusResponse = await axios.get(
+        baseUrl + apiEndpoint,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `O-Bearer ${accessToken}`
+          },
+          timeout: 10000
+        }
+      );
+
+      if (!statusResponse.data || statusResponse.data.state !== 'COMPLETED') {
+        console.warn(`[markPaymentCompleted] Security Alert: Payment not completed on PhonePe side (State: ${statusResponse.data?.state})`);
+        return res.status(403).json({
+          success: false,
+          message: "Payment verification failed. Cannot mark as completed.",
+          state: statusResponse.data?.state || 'UNKNOWN'
+        });
+      }
+
+      console.log(`[markPaymentCompleted] ✅ PhonePe verification successful for order: ${checkId}`);
+    } catch (verifyError) {
+      console.error("[markPaymentCompleted] PhonePe verification error:", verifyError.response?.data || verifyError.message);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to verify payment status with provider. Please try again.",
+        error: verifyError.message
+      });
+    }
+
     // Update booking status to Completed
     booking.paymentStatus = "Completed";
     booking.paymentType = "PhonePe";
