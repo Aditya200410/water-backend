@@ -1,6 +1,9 @@
 // File: admin/backend/controllers/bookingController.js
 const Booking = require("../models/Booking");
 const User = require("../models/User");
+const Product = require("../models/Product");
+const Settings = require("../models/Settings");
+const Coupon = require("../models/coupon");
 const nodemailer = require("nodemailer");
 const crypto = require("crypto");
 const { sendWhatsAppMessage } = require("../service/whatsappService");
@@ -365,6 +368,137 @@ exports.createBooking = async (req, res) => {
       return res
         .status(400)
         .json({ success: false, message: "Invalid amounts" });
+    }
+
+    // ✅ SECURITY CHECK: Recalculate price on server to prevent tampering
+    console.log("[createBooking] Security check: Validating price on server...");
+
+    const product = await Product.findById(waterpark);
+    if (!product) {
+      console.warn("[createBooking] Product not found for ID:", waterpark);
+      return res.status(404).json({ success: false, message: "Waterpark not found" });
+    }
+
+    const settingsDoc = await Settings.findOne({ key: 'weekend_pricing' });
+    const weekendSetting = settingsDoc ? settingsDoc.value : { status: false, dates: [] };
+
+    // Use toDateString() for comparisons to avoid time-of-day issues
+    const dateStr = bookingDateObj.toISOString().split('T')[0];
+
+    // Check if it's a special day (weekend or manual date)
+    // Front-end only considers Sunday as weekend (dayOfWeek === 0)
+    const isWeekendDay = bookingDateObj.getUTCDay() === 0;
+    const isManuallySelected = (weekendSetting.dates || []).some(dbDateString => {
+      try {
+        return new Date(dbDateString).toISOString().split('T')[0] === dateStr;
+      } catch (e) {
+        return false;
+      }
+    });
+    const isSpecialDay = (weekendSetting.status && (isWeekendDay || isManuallySelected));
+
+    // Helper to get price
+    const getPrice = (prod, priceType, dStr) => {
+      // Handle Map if it's a Mongoose Map, otherwise regular object
+      let special;
+      if (prod.specialPrices instanceof Map) {
+        special = prod.specialPrices.get(dStr);
+      } else {
+        special = prod.specialPrices?.[dStr];
+      }
+      return (special && special[priceType] !== undefined) ? special[priceType] : (prod[priceType] || 0);
+    };
+
+    const effectiveAdultPrice = getPrice(product, 'adultprice', dateStr);
+    const effectiveChildPrice = getPrice(product, 'childprice', dateStr);
+    const effectiveAdvancePrice = getPrice(product, 'advanceprice', dateStr);
+    const effectiveWeekendPrice = getPrice(product, 'weekendprice', dateStr);
+    const effectiveWeekendChildPrice = getPrice(product, 'price', dateStr);
+    const effectiveWeekendAdvance = getPrice(product, 'weekendadvance', dateStr);
+
+    let adultPrice, childPrice, advancePrice;
+
+    const hasSpecialPricing = product.specialPrices instanceof Map ?
+      product.specialPrices.has(dateStr) :
+      (product.specialPrices?.[dateStr] && Object.keys(product.specialPrices[dateStr]).length > 0);
+
+    if (hasSpecialPricing) {
+      adultPrice = effectiveAdultPrice;
+      childPrice = effectiveChildPrice;
+      advancePrice = effectiveAdvancePrice;
+    } else if (isSpecialDay) {
+      adultPrice = effectiveWeekendPrice || effectiveAdultPrice;
+      childPrice = effectiveWeekendChildPrice || effectiveChildPrice;
+      advancePrice = effectiveWeekendAdvance || effectiveAdvancePrice;
+    } else {
+      adultPrice = effectiveAdultPrice;
+      childPrice = effectiveChildPrice;
+      advancePrice = effectiveAdvancePrice;
+    }
+
+    let expectedGrandTotal = (Number(adults) * adultPrice) + (Number(children) * childPrice);
+
+    // Apply coupon if provided
+    let finalExpectedGrandTotal = expectedGrandTotal;
+    if (req.body.couponCode) {
+      const coupon = await Coupon.findOne({
+        code: req.body.couponCode.toUpperCase(),
+        isActive: true,
+        startDate: { $lte: new Date() },
+        endDate: { $gt: new Date() }
+      });
+
+      if (coupon) {
+        if (expectedGrandTotal >= coupon.minPurchase && (coupon.usageLimit === null || coupon.usedCount < coupon.usageLimit)) {
+          let isApplicable = true;
+          if (coupon.isProductSpecific && coupon.applicableProducts.length > 0) {
+            isApplicable = coupon.applicableProducts.some(p => p.toString() === waterpark.toString());
+          }
+
+          if (isApplicable) {
+            let discountAmount = 0;
+            if (coupon.discountType === 'percentage') {
+              discountAmount = (expectedGrandTotal * coupon.discountValue) / 100;
+            } else {
+              discountAmount = coupon.discountValue;
+            }
+            if (coupon.maxDiscount && discountAmount > coupon.maxDiscount) {
+              discountAmount = coupon.maxDiscount;
+            }
+            finalExpectedGrandTotal = expectedGrandTotal - discountAmount;
+          }
+        }
+      }
+    }
+
+    let expectedAdvanceAmount;
+    const prodPaymentType = product.paymentType || 'advance';
+    if (prodPaymentType === 'full') {
+      expectedAdvanceAmount = finalExpectedGrandTotal;
+    } else {
+      // Recalculate advance amount specifically
+      const adultAdvancePriceVal = getPrice(product, 'adultadvanceprice', dateStr) || advancePrice;
+      const childAdvancePriceVal = getPrice(product, 'childadvanceprice', dateStr) || advancePrice;
+      expectedAdvanceAmount = (Number(adults) * adultAdvancePriceVal) + (Number(children) * childAdvancePriceVal);
+    }
+
+    // Allow 1 rupee difference for rounding
+    const totalDiff = Math.abs(totalAmount - finalExpectedGrandTotal);
+    const advanceDiff = Math.abs(Number(advanceAmount) - expectedAdvanceAmount);
+
+    if (totalDiff > 1.5 || advanceDiff > 1.5) {
+      console.error("[createBooking] SECURITY ALERT: Price tampering detected!", {
+        receivedTotal: totalAmount,
+        expectedTotal: finalExpectedGrandTotal,
+        receivedAdvance: advanceAmount,
+        expectedAdvance: expectedAdvanceAmount,
+        diffs: { totalDiff, advanceDiff },
+        params: { adults, children, isSpecialDay, dateStr, couponCode: req.body.couponCode }
+      });
+      return res.status(400).json({
+        success: false,
+        message: "Security Error: The payment amount does not match the ticket price. Please refresh the page and try again.",
+      });
     }
 
     // ✅ START: CORRECTED BOOKING ID GENERATION
