@@ -49,6 +49,13 @@ function isVercelPreview(origin) {
 app.use(cors({
   origin: function (origin, callback) {
     if (!origin) return callback(null, true);
+    // Allow PhonePe webhooks
+    if (origin.endsWith('phonepe.com')) return callback(null, true);
+    // Allow local development exact matches
+    if (origin.startsWith('http://127.0.0.1:') || origin.startsWith('http://localhost:')) {
+      return callback(null, true);
+    }
+    
     if (allowedOrigins.includes(origin) || isVercelPreview(origin)) {
       callback(null, true);
     } else {
@@ -67,8 +74,10 @@ app.use(cors({
 // Additional CORS headers for all routes
 app.use((req, res, next) => {
   const origin = req.headers.origin;
-  if (allowedOrigins.includes(origin) || isVercelPreview(origin)) {
-    res.header('Access-Control-Allow-Origin', origin);
+  if (origin) {
+    if (allowedOrigins.includes(origin) || isVercelPreview(origin) || origin.endsWith('phonepe.com') || origin.startsWith('http://127.0.0.1:') || origin.startsWith('http://localhost:')) {
+      res.header('Access-Control-Allow-Origin', origin);
+    }
   }
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
   res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, Content-Length');
@@ -131,10 +140,8 @@ app.use('/waterbackend/data', (req, res, next) => {
 const MONGODB_URI = process.env.MONGODB_URI || "mongodb+srv://lightyagami98k:UN1cr0DnJwISvvgs@cluster0.uwkswmj.mongodb.net/waterpark?retryWrites=true&w=majority&appName=Cluster0";
 
 // Connect to MongoDB
-mongoose.connect(MONGODB_URI, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true
-}).then(() => console.log("MongoDB connected to:", MONGODB_URI))
+mongoose.connect(MONGODB_URI)
+  .then(() => console.log("MongoDB connected to:", MONGODB_URI))
   .catch(err => console.error("MongoDB connection error:", err));
 
 // API Routes
