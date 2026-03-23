@@ -304,8 +304,8 @@ exports.phonePeCallback = async (req, res) => {
       const baseUrl = env === 'production' 
         ? 'https://api.phonepe.com/apis/pg'
         : 'https://api-preprod.phonepe.com/apis/pg-sandbox';
-      // Use orderId (PhonePe's transaction ID) for status check
-      const apiEndpoint = `/checkout/v2/order/${orderId}/status`;
+      // Use merchantOrderId for V2 status check
+      const apiEndpoint = `/checkout/v2/order/${merchantOrderId}/status`;
       const response = await axios.get(
         baseUrl + apiEndpoint,
         {

@@ -750,9 +750,9 @@ exports.verifyPayment = async (req, res) => {
       const baseUrl = env === 'production'
         ? 'https://api.phonepe.com/apis/pg'
         : 'https://api-preprod.phonepe.com/apis/pg-sandbox';
-      const apiEndpoint = `/checkout/v2/order/${orderId}/status`;
+      const apiEndpoint = `/checkout/v2/order/${merchantOrderId}/status`;
 
-      console.log(`[verifyPayment] Checking PhonePe status for orderId: ${orderId}`);
+      console.log(`[verifyPayment] Checking PhonePe status for merchantOrderId: ${merchantOrderId}`);
 
       const statusResponse = await axios.get(
         baseUrl + apiEndpoint,
