@@ -1,4 +1,5 @@
 // File: admin/backend/controllers/bookingController.js
+const Razorpay = require("razorpay");
 const Booking = require("../models/Booking");
 const User = require("../models/User");
 const Product = require("../models/Product");
@@ -693,6 +694,59 @@ exports.createBooking = async (req, res) => {
         });
       }
     }
+
+    // ✅ Razorpay Payment
+    if (paymentMethod === "razorpay") {
+      console.log("[createBooking] Creating Razorpay order for booking:", booking.customBookingId);
+      try {
+        const razorpay = new Razorpay({
+          key_id: process.env.RAZORPAY_KEY_ID,
+          key_secret: process.env.RAZORPAY_KEY_SECRET,
+        });
+
+        const orderOptions = {
+          amount: advancePaise,
+          currency: "INR",
+          receipt: booking._id.toString(),
+          payment_capture: 1,
+          notes: {
+            bookingId: booking._id.toString(),
+            customBookingId: booking.customBookingId,
+            waterparkName,
+            customerName: name,
+            customerEmail: email,
+            customerPhone: phone,
+            waternumber: waternumber,
+          },
+        };
+
+        const order = await razorpay.orders.create(orderOptions);
+        console.log("[createBooking] Razorpay order created:", order.id);
+
+        booking.paymentId = order.id; // optionally save razorpay order ID here
+        await booking.save();
+
+        return res.status(200).json({
+          success: true,
+          message: "Razorpay order created",
+          orderId: order.id,
+          amount: order.amount,
+          currency: order.currency,
+          razorpayKeyId: process.env.RAZORPAY_KEY_ID,
+          booking,
+        });
+      } catch (error) {
+        console.error("[createBooking] Razorpay order creation error:", error);
+        const errorMessage = error.error?.description || error.message || "Failed to create Razorpay order";
+        return res.status(500).json({
+          success: false,
+          message: errorMessage,
+          booking,
+          error: error
+        });
+      }
+    }
+
   } catch (error) {
     console.error("[createBooking] Error:", error);
     // Handle potential duplicate key error for customBookingId
@@ -727,11 +781,11 @@ exports.verifyPayment = async (req, res) => {
       bookingId, // customBookingId
     } = req.body;
 
-    if (!orderId || !bookingId) {
+    if (!bookingId) {
       console.warn("[verifyPayment] Missing required fields.");
       return res
         .status(400)
-        .json({ success: false, message: "Missing required fields: orderId and bookingId are required" });
+        .json({ success: false, message: "Missing required fields: bookingId is required" });
     }
 
     // Find booking by customBookingId
@@ -743,8 +797,54 @@ exports.verifyPayment = async (req, res) => {
         .json({ success: false, message: "Booking not found." });
     }
 
-    // Check PhonePe payment status
+    // ✅ Verify Razorpay Payment
+    if (req.body.paymentMethod === "razorpay") {
+      const { razorpay_payment_id, razorpay_order_id, razorpay_signature } = req.body;
+      
+      if (!razorpay_payment_id || !razorpay_order_id || !razorpay_signature) {
+        return res.status(400).json({ success: false, message: "Missing required fields for Razorpay" });
+      }
+
+      const generated_signature = crypto
+        .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
+        .update(razorpay_order_id + "|" + razorpay_payment_id)
+        .digest("hex");
+
+      if (generated_signature !== razorpay_signature) {
+        return res.status(400).json({ success: false, message: "Invalid Razorpay signature" });
+      }
+
+      booking.paymentStatus = "Completed";
+      booking.paymentType = "Razorpay";
+      booking.paymentId = razorpay_payment_id;
+
+      try {
+        await booking.save();
+        console.log("[verifyPayment] ✅ Booking successfully saved with paymentStatus: Completed for Razorpay");
+
+        const frontendUrl = `https://www.waterparkchalo.com/ticket?bookingId=${booking.customBookingId}`;
+        
+        sendBookingNotifications(booking).catch(err =>
+          console.error("[verifyPayment] Background notification error:", err)
+        );
+
+        return res.status(200).json({
+          success: true,
+          message: "Payment verified successfully",
+          booking,
+          frontendUrl,
+        });
+      } catch (saveError) {
+        console.error("[verifyPayment] Error saving booking:", saveError);
+        return res.status(500).json({ success: false, message: "Failed to save booking with payment status" });
+      }
+    }
+
+    // ✅ Check PhonePe payment status
     try {
+      if (!orderId) {
+        return res.status(400).json({ success: false, message: "Missing PhonePe orderId" });
+      }
       const accessToken = await getPhonePeToken();
       const env = process.env.PHONEPE_ENV || 'sandbox';
       const baseUrl = env === 'production'
