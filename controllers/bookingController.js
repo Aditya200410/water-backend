@@ -802,9 +802,47 @@ exports.verifyPayment = async (req, res) => {
       const { razorpay_payment_id, razorpay_order_id, razorpay_signature } = req.body;
       
       if (!razorpay_payment_id || !razorpay_order_id || !razorpay_signature) {
-        return res.status(400).json({ success: false, message: "Missing required fields for Razorpay" });
+        // Fallback to Server-to-Server API check if signature is not provided
+        console.log(`[verifyPayment] Missing Razorpay signature. Fetching order status for ${booking.paymentId}`);
+        try {
+          const razorpay = new Razorpay({
+            key_id: process.env.RAZORPAY_KEY_ID,
+            key_secret: process.env.RAZORPAY_KEY_SECRET,
+          });
+          const orderInfo = await razorpay.orders.fetch(booking.paymentId);
+          console.log(`[verifyPayment] Razorpay order status: ${orderInfo.status}`);
+
+          if (orderInfo.status === 'paid') {
+            booking.paymentStatus = "Completed";
+            booking.paymentType = "Razorpay";
+
+            try {
+              await booking.save();
+              console.log("[verifyPayment] ✅ Booking successfully saved with paymentStatus: Completed for Razorpay via API check");
+              const frontendUrl = `https://www.waterparkchalo.com/ticket?bookingId=${booking.customBookingId}`;
+              sendBookingNotifications(booking).catch(err =>
+                console.error("[verifyPayment] Background notification error:", err)
+              );
+              return res.status(200).json({
+                success: true,
+                message: "Payment verified successfully via API",
+                booking,
+                frontendUrl,
+              });
+            } catch (saveError) {
+              console.error("[verifyPayment] Error saving booking:", saveError);
+              return res.status(500).json({ success: false, message: "Failed to save booking with payment status" });
+            }
+          } else {
+            return res.status(200).json({ success: false, message: "Payment is pending or failed", state: orderInfo.status });
+          }
+        } catch (fetchError) {
+          console.error("[verifyPayment] Razorpay API fetch error:", fetchError);
+          return res.status(500).json({ success: false, message: "Failed to fetch Razorpay order status" });
+        }
       }
 
+      // If signature is provided, verify it normally
       const generated_signature = crypto
         .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
         .update(razorpay_order_id + "|" + razorpay_payment_id)
@@ -1055,6 +1093,103 @@ exports.phonePeWebhook = async (req, res) => {
 
   } catch (error) {
     console.error("[phonePeWebhook] Error processing webhook:", error);
+    return res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
+
+// ----------------------------
+// Razorpay Webhook
+// ----------------------------
+exports.razorpayWebhook = async (req, res) => {
+  console.log("[razorpayWebhook] Received webhook callback");
+
+  try {
+    const secret = process.env.RAZORPAY_WEBHOOK_SECRET;
+    const signature = req.headers['x-razorpay-signature'];
+
+    if (!secret || !signature) {
+      console.warn("[razorpayWebhook] Missing secret or signature");
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
+
+    let bodyText = '';
+    let parsedBody = {};
+    if (Buffer.isBuffer(req.body)) {
+      bodyText = req.body.toString('utf8');
+      try {
+        parsedBody = JSON.parse(bodyText);
+      } catch (e) {
+        return res.status(400).json({ success: false, message: "Invalid JSON" });
+      }
+    } else {
+      parsedBody = req.body;
+      bodyText = JSON.stringify(req.body);
+    }
+
+    // Verify signature
+    const crypto = require("crypto");
+    const expectedSignature = crypto.createHmac('sha256', secret)
+      .update(bodyText)
+      .digest('hex');
+
+    if (expectedSignature !== signature) {
+      console.warn("[razorpayWebhook] Invalid signature");
+      return res.status(400).json({ success: false, message: "Invalid signature" });
+    }
+
+    const { event, payload } = parsedBody;
+    console.log("[razorpayWebhook] Event:", event);
+
+    if (event === 'payment.captured' || event === 'order.paid') {
+      const paymentEntity = payload.payment ? payload.payment.entity : (payload.order ? payload.order.entity : null);
+      if (!paymentEntity) {
+         return res.status(400).json({ success: false, message: "Invalid payload structure" });
+      }
+
+      const orderId = paymentEntity.order_id || paymentEntity.id; // order_id from payment, or id from order
+      const customBookingId = paymentEntity.notes ? paymentEntity.notes.customBookingId : null;
+      let booking;
+
+      if (customBookingId) {
+        booking = await Booking.findOne({ customBookingId });
+      } else {
+        booking = await Booking.findOne({ paymentId: orderId });
+      }
+
+      if (!booking) {
+        console.warn(`[razorpayWebhook] Booking not found for Order ID: ${orderId}`);
+        return res.status(404).json({ success: false, message: "Booking not found" });
+      }
+
+      if (booking.paymentStatus === 'Completed') {
+        console.log(`[razorpayWebhook] Booking ${booking.customBookingId} already marked as completed`);
+        return res.status(200).json({ success: true, message: "Already processed" });
+      }
+
+      // Update Booking
+      booking.paymentStatus = "Completed";
+      booking.paymentType = "Razorpay";
+      // Update payment id to the actual captured payment id if needed, but here we can just leave it as order.id or update to payment.id if available
+      if (payload.payment && payload.payment.entity && payload.payment.entity.id) {
+          booking.paymentId = payload.payment.entity.id;
+      }
+
+      await booking.save();
+      console.log(`[razorpayWebhook] Updated booking ${booking.customBookingId} status to Completed`);
+
+      // Send Notifications
+      sendBookingNotifications(booking).catch(err =>
+        console.error("[razorpayWebhook] Notification error:", err)
+      );
+
+      return res.status(200).json({ success: true, message: "Webhook processed successfully" });
+    } else {
+      console.log(`[razorpayWebhook] Unhandled event type: ${event}`);
+      return res.status(200).json({ success: true, message: "Event ignored" });
+    }
+
+  } catch (error) {
+    console.error("[razorpayWebhook] Error processing webhook:", error);
     return res.status(500).json({ success: false, message: "Internal server error" });
   }
 };
