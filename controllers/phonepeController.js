@@ -147,7 +147,7 @@ exports.createPhonePeOrder = async (req, res) => {
     // Based on: https://developer.phonepe.com/v1/reference/create-payment-standard-checkout
     const baseUrl = env === 'production' 
       ? 'https://api.phonepe.com/apis/pg'
-      : '	https://api-preprod.phonepe.com/apis/pg-sandbox';
+      : 'https://api-preprod.phonepe.com/apis/pg-sandbox';
 
     const apiEndpoint = '/checkout/v2/pay';
 
@@ -160,13 +160,11 @@ exports.createPhonePeOrder = async (req, res) => {
       amount: Math.round(amount * 100), // Convert to paise
       expireAfter: 1200, // 20 minutes expiry
       metaInfo: {
-        udf1: customerName,
-        udf2: email,
-        udf3: phone,
-        udf4: sellerToken || '',
-        udf5: couponCode || '',
-        udf6: upfrontAmount ? `upfront:${upfrontAmount}` : '',
-        udf7: remainingAmount ? `remaining:${remainingAmount}` : ''
+        udf1: customerName || 'user',
+        udf2: email || 'no-email',
+        udf3: phone || '0000000000',
+        udf4: sellerToken || 'none',
+        udf5: couponCode ? `coupon:${couponCode}|upfront:${upfrontAmount||0}` : `upfront:${upfrontAmount||0}`
       },
       paymentFlow: {
         type: 'PG_CHECKOUT',
